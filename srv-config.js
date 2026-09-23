@@ -2,9 +2,11 @@ const crypto = require('crypto');
 
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const PUBLIC_URL = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
-const ADMIN_IDS = (process.env.ADMIN_IDS || '7995243814')
-  .split(',')
-  .map((s) => Number(s.trim()))
+// ADMIN_IDS = comma separated Telegram user IDs, set in the Render environment (e.g. 7995243814,123456789).
+// Spaces, quotes, brackets and semicolons are tolerated. If the variable is missing, the owner ID below is used.
+const ADMIN_IDS = String(process.env.ADMIN_IDS || '7995243814')
+  .split(/[\s,;]+/)
+  .map((s) => Number(s.replace(/[^0-9]/g, '')))
   .filter((n) => Number.isFinite(n) && n > 0);
 
 // Derived automatically so you never have to set one.

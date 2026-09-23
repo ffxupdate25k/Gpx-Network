@@ -23,13 +23,17 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 // Everything lives in one flat folder (no /public), so only "web-*" files (plus the
 // homepage) are ever served — server files like srv-*.js, package.json, .env.example
 // are never reachable over HTTP.
-const WEB_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const WEB_MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml'
+};
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'web-index.html')));
-app.get(/^\/(web-[A-Za-z0-9._-]+\.(?:html|js|css))$/, (req, res, next) => {
+app.get(/^\/(web-[A-Za-z0-9._-]+\.(?:html|js|css|png|jpe?g|webp|svg))$/, (req, res, next) => {
   const file = req.params[0];
   const full = path.join(__dirname, file);
   if (!fs.existsSync(full)) return next();
-  res.set('Content-Type', WEB_MIME[path.extname(file)] || 'application/octet-stream');
+  res.set('Content-Type', WEB_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
+  if (/\.(png|jpe?g|webp|svg)$/i.test(file)) res.set('Cache-Control', 'public, max-age=86400');
   res.sendFile(full);
 });
 

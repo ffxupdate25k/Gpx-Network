@@ -52,8 +52,8 @@ export function openAny(url) {
 export function askWriteAccess() {
   try {
     if (getUser().allows_write_to_pm || !tg.requestWriteAccess) return;
-    if (localStorage.getItem("bw_write_asked")) return;
-    localStorage.setItem("bw_write_asked", "1");
+    if (localStorage.getItem("gpx_write_asked")) return;
+    localStorage.setItem("gpx_write_asked", "1");
     tg.requestWriteAccess();
   } catch (e) { /* not supported */ }
 }

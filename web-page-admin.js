@@ -43,7 +43,7 @@ export default {
       try {
         await TABS.find((t) => t.id === id).page.render(box);
       } catch (err) {
-        if (err.gate) return window.dispatchEvent(new Event("bw:gate"));
+        if (err.gate) return window.dispatchEvent(new Event("gpx:gate"));
         box.innerHTML = `<div class="card empty">${esc(err.message)}</div>`;
       }
     }

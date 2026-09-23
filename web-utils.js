@@ -43,7 +43,7 @@ export function statusBadge(status) {
 // One place to report an error to the user. If the server says the user is no longer in the
 // required channels, the join screen is shown again instead.
 export function fail(err) {
-  if (err && err.gate) { window.dispatchEvent(new Event("bw:gate")); return; }
+  if (err && err.gate) { window.dispatchEvent(new Event("gpx:gate")); return; }
   haptic("error");
   notify((err && err.message) || "Something went wrong.");
 }
