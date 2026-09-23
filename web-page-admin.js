@@ -8,6 +8,7 @@ import payouts   from "./web-page-admin-payouts.js";
 import users     from "./web-page-admin-users.js";
 import broadcast from "./web-page-admin-broadcast.js";
 import promo from "./web-page-admin-promo.js";
+import adminUsers from "./web-page-admin-admins.js";
 
 const TABS = [
   { id: "overview",  label: "Overview",    page: overview },
@@ -17,7 +18,8 @@ const TABS = [
   { id: "payouts",   label: "Withdrawals", page: payouts },
   { id: "users",     label: "Users",       page: users },
   { id: "broadcast", label: "Broadcast",   page: broadcast },
-  { id: "promo", label: "Promo Codes", page: promo }
+  { id: "promo", label: "Promo Codes", page: promo },
+  { id: "admins", label: "Admins", page: adminUsers }
 ];
 
 let lastTab = "overview";

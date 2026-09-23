@@ -9,7 +9,7 @@ function stateBadge(w) {
   if (w.status !== "pending") return "";
   if (w.payout_state === "sending") return `<span class="badge b-pend">Sending…</span>`;
   if (w.payout_state === "review") return `<span class="badge b-err">Check this one</span>`;
-  return `<span class="badge b-pend">Waiting for you</span>`;
+  return `<span class="badge b-pend">Awaiting approval</span>`;
 }
 
 export default {
@@ -34,10 +34,9 @@ export default {
             <div class="acts">
               <button class="btn sm ghost" data-act="copy" data-addr="${esc(w.address)}">Copy address</button>
               ${w.tx_hash && /^0x[0-9a-fA-F]{64}$/.test(w.tx_hash) ? `<button class="btn sm ghost" data-act="tx" data-hash="${esc(w.tx_hash)}">View transaction</button>` : ""}
-              ${w.status === "pending" && w.payout_state === "manual" ? `<button class="btn sm" data-act="send" data-id="${w.id}">Send automatically</button>` : ""}
               ${w.status === "pending" && w.payout_state !== "sending" ? `
-                <button class="btn sm ghost" data-act="paid" data-id="${w.id}">Mark paid</button>
-                <button class="btn sm danger" data-act="reject" data-id="${w.id}">Reject</button>` : ""}
+                <button class="btn sm" data-act="approve" data-id="${w.id}">Approve & Send</button>
+                <button class="btn sm danger" data-act="reject" data-id="${w.id}">Reject & Refund</button>` : ""}
             </div>
           </div>`).join("") : `<div class="card empty">No ${filter} withdrawals.</div>`}`;
 
@@ -54,15 +53,11 @@ export default {
             if (act === "tx") return openLink("https://bscscan.com/tx/" + b.dataset.hash);
 
             const id = Number(b.dataset.id);
-            if (act === "send") {
-              if (!(await confirmBox("Send this payout now?"))) return;
+            if (act === "approve") {
+              if (!(await confirmBox("Approve this withdrawal and send the funds to the saved wallet?"))) return;
               b.disabled = true;
-              await api.admin.sendWithdrawal(id);
-              notify("Sending. The user gets a message when it's done.");
-            } else if (act === "paid") {
-              if (!(await confirmBox("Mark as paid? Make sure the money already went out."))) return;
-              b.disabled = true;
-              await api.admin.payWithdrawal(id);
+              await api.admin.approveWithdrawal(id);
+              notify("Withdrawal approved and payout submitted.");
             } else if (act === "reject") {
               if (!(await confirmBox("Reject and refund this withdrawal?"))) return;
               b.disabled = true;

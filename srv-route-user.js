@@ -24,7 +24,7 @@ router.get('/me', wrap(async (req,res)=>{
   const ref=await pool.query(`SELECT COUNT(*) AS n,COALESCE(SUM(reward),0) AS earned FROM referrals WHERE referrer_id=$1 AND status='completed'`,[req.user.id]);
   const tasks=await pool.query(`SELECT COUNT(*) AS n FROM task_submissions WHERE user_id=$1 AND status='approved'`,[req.user.id]);
   const total=await pool.query(`SELECT COALESCE(SUM(amount),0) AS n FROM transactions WHERE user_id=$1 AND amount>0`,[req.user.id]);
-  const referrals=Number(ref.rows[0].n); const level=Math.floor(referrals/100); const next=(level+1)*100;
+  const referrals=Number(ref.rows[0].n); const level=Math.max(0, Number(req.user.level_override ?? Math.floor(referrals/100))); const next=(level+1)*100;
   const wallet=req.user.gpx_wallet_address || await svc.ensureGpxWallet(req.user.id);
   res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawals_per_day:s.withdrawals_per_day});
 }));

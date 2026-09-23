@@ -1,4 +1,5 @@
 const { BOT_TOKEN, ADMIN_IDS } = require('./srv-config');
+const { pool } = require('./srv-db');
 const { verifyInitData } = require('./srv-initdata');
 const svc = require('./srv-services');
 const { HttpError, wrap } = require('./srv-errors');
@@ -15,7 +16,8 @@ const requireAuth = wrap(async (req, res, next) => {
   const data = verifyInitData(header.slice(4), BOT_TOKEN);
   if (!data || !data.user || !data.user.id) throw new HttpError(401, 'Session expired. Close the app and open it again.');
   req.user = await svc.registerUser(data.user, parseRef(data.start_param));
-  req.isAdmin = ADMIN_IDS.includes(Number(req.user.id));
+  const adminRow = await pool.query('SELECT 1 FROM admin_users WHERE user_id = $1 LIMIT 1', [req.user.id]);
+  req.isAdmin = ADMIN_IDS.includes(Number(req.user.id)) || adminRow.rowCount > 0;
   next();
 });
 

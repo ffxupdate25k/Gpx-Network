@@ -243,8 +243,8 @@ async function createWithdrawal(user, amountIn) {
   if(s.max_withdraw>0&&amount>s.max_withdraw) throw new HttpError(400,`Maximum withdrawal is ${s.max_withdraw.toFixed(2)} USDT.`);
   const countQ=await pool.query(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[user.id]);
   if(Number(countQ.rows[0].n)>=s.withdrawals_per_day) throw new HttpError(400,`You can make only ${s.withdrawals_per_day} withdrawals per day.`);
-  const auto=autoPayoutReady(s); const result=await tx(async(c)=>{ const r=await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance',[amount,user.id]); if(!r.rowCount)throw new HttpError(400,'Amount is higher than your USDT balance.'); const t=await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal','USDT Withdrawal','pending') RETURNING id`,[user.id,-amount]); const w=await c.query(`INSERT INTO withdrawals(user_id,amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5) RETURNING id`,[user.id,amount,address,t.rows[0].id,auto?'sending':'manual']); return {id:w.rows[0].id,balance:r.rows[0].usdt_balance}; });
-  if(auto) runPayout(result.id).catch(e=>console.error('Payout crashed:',e.message)); else notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT from ${displayName(user)} (ID ${user.id}).`);
+  const auto=false; const result=await tx(async(c)=>{ const r=await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance',[amount,user.id]); if(!r.rowCount)throw new HttpError(400,'Amount is higher than your USDT balance.'); const t=await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal','USDT Withdrawal','pending') RETURNING id`,[user.id,-amount]); const w=await c.query(`INSERT INTO withdrawals(user_id,amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5) RETURNING id`,[user.id,amount,address,t.rows[0].id,auto?'sending':'manual']); return {id:w.rows[0].id,balance:r.rows[0].usdt_balance}; });
+  notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT from ${displayName(user)} (ID ${user.id}). Open Admin Panel > Withdrawals to approve or reject it.`);
   return {...result,auto};
 }
 
@@ -370,6 +370,50 @@ async function runPayout(id) {
       ? `⚠️ Auto payout problem: ${r.reason}\nA withdrawal of ${amountText} to ${where} is waiting. Fix Settings, then tap "Send automatically" in Admin panel > Withdrawals.`
       : `⚠️ Unclear payout result for ${amountText} to ${where}: ${r.reason}\nCheck whether it was sent, then mark it paid or reject it (refund) in Admin panel > Withdrawals.`
   );
+}
+
+// Admin approval: reserve the request, send through the configured payout API, then mark paid or refund.
+async function approveWithdrawal(id, adminId) {
+  const claimed = await tx(async (c) => {
+    const q = await c.query(`SELECT * FROM withdrawals WHERE id = $1 AND status = 'pending' FOR UPDATE`, [id]);
+    if (!q.rowCount) throw new HttpError(404, 'Already processed or not found.');
+    const row = q.rows[0];
+    if (row.payout_state === 'sending') throw new HttpError(409, 'This withdrawal is already being processed.');
+    await c.query(`UPDATE withdrawals SET payout_state='sending', note=NULL, processed_by=$2 WHERE id=$1`, [id, adminId]);
+    return row;
+  });
+  const s = await getSettings();
+  if (!(s.payout_api_key && s.payout_token_address && s.payout_api_url)) {
+    await pool.query(`UPDATE withdrawals SET payout_state='manual', note='Payout service is not configured. Add the payout API URL, API key and token address in Settings.' WHERE id=$1 AND status='pending'`, [id]);
+    throw new HttpError(400, 'Payout service is not configured.');
+  }
+  const r = await callPayoutApi(s, claimed);
+  const amountText = money(claimed.amount);
+  const where = shortAddr(claimed.address);
+  if (r.kind === 'success') {
+    await tx(async (c) => {
+      const cur = await c.query(`SELECT id FROM withdrawals WHERE id=$1 AND status='pending' FOR UPDATE`, [id]);
+      if (!cur.rowCount) return;
+      await c.query(`UPDATE withdrawals SET status='paid', payout_state='done', tx_hash=$2, payout_response=$3, processed_at=now(), processed_by=$4 WHERE id=$1`, [id, r.txHash, r.raw, adminId]);
+      await c.query(`UPDATE transactions SET status='completed' WHERE id=$1`, [claimed.transaction_id]);
+    });
+    const link = r.txHash && /^0x[0-9a-fA-F]{64}$/.test(r.txHash) ? `\nTransaction: https://bscscan.com/tx/${r.txHash}` : '';
+    notifyUser(claimed.user_id, `✅ Your withdrawal of ${amountText} USDT was approved and sent to ${where}.${r.txHash ? `\nTX Hash: ${r.txHash}` : ''}${link}`.slice(0, 1000));
+    return {status:'paid', tx_hash:r.txHash||null};
+  }
+  if (r.kind === 'failed' || r.kind === 'config') {
+    await tx(async (c) => {
+      const cur = await c.query(`SELECT * FROM withdrawals WHERE id=$1 AND status='pending' FOR UPDATE`, [id]);
+      if (!cur.rowCount) return;
+      await c.query(`UPDATE withdrawals SET payout_response=$2 WHERE id=$1`, [id, r.raw]);
+      await refundWithdrawal(c, cur.rows[0], `Withdrawal rejected: ${r.reason}`.slice(0,300), adminId);
+    });
+    notifyUser(claimed.user_id, `❌ Your withdrawal of ${amountText} USDT was rejected. ${r.reason || 'The payout service rejected the request.'} The amount has been refunded to your balance.`.slice(0,900));
+    return {status:'rejected', reason:r.reason};
+  }
+  await pool.query(`UPDATE withdrawals SET payout_state='review', note=$2, payout_response=$3 WHERE id=$1 AND status='pending'`, [id, (r.reason||'Payout result could not be confirmed.').slice(0,300), r.raw]);
+  notifyUser(claimed.user_id, `⏳ Your withdrawal of ${amountText} USDT is still processing because the payout service did not return a clear result. An admin will review it.`);
+  throw new HttpError(502, 'Payout result could not be confirmed. Review the withdrawal before retrying.');
 }
 
 // Retry a withdrawal that was waiting for the admin (auto payout was off, or the API key needed fixing).
@@ -503,13 +547,36 @@ async function ensureGpxWallet(userId){
 async function generateGpxWallet(userId){const addr=newWalletAddress();try{const r=await pool.query('UPDATE users SET gpx_wallet_address=$1,gpx_wallet_revoked_at=NULL WHERE id=$2 RETURNING gpx_wallet_address',[addr,userId]);if(!r.rowCount)throw new HttpError(404,'User not found.');return r.rows[0].gpx_wallet_address;}catch(e){if(e.code==='23505')return generateGpxWallet(userId);throw e;}}
 async function revokeGpxWallet(userId){const r=await pool.query('UPDATE users SET gpx_wallet_address=NULL,gpx_wallet_revoked_at=now() WHERE id=$1 RETURNING id',[userId]);if(!r.rowCount)throw new HttpError(404,'User not found.');return true;}
 async function convertGpx(userId, amount){const s=await getSettings(); const n=Math.floor(Number(amount)); if(!Number.isFinite(n)||n<s.min_conversion_gpx)throw new HttpError(400,`Minimum conversion is ${s.min_conversion_gpx.toLocaleString()} GPX.`); if(n%s.gpx_per_001_usdt!==0)throw new HttpError(400,`Amount must be in ${s.gpx_per_001_usdt.toLocaleString()} GPX increments.`); const usdt=n/s.gpx_per_001_usdt*0.01; return tx(async(c)=>{const r=await c.query('UPDATE users SET balance=balance-$1,usdt_balance=usdt_balance+$2 WHERE id=$3 AND balance>=$1 RETURNING balance,usdt_balance',[n,usdt,userId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'conversion',$3)`,[userId,-n,`Converted ${n} GPX to ${usdt.toFixed(2)} USDT`]);return{gpx:n,usdt,balance:r.rows[0].balance,usdt_balance:r.rows[0].usdt_balance};});}
-async function transferGpx(fromId,address,amount){const n=Math.floor(Number(amount));if(!Number.isFinite(n)||n<=0)throw new HttpError(400,'Enter a valid GPX amount.');const result=await tx(async(c)=>{const me=await c.query('SELECT id,balance,gpx_wallet_address FROM users WHERE id=$1 FOR UPDATE',[fromId]);if(!me.rowCount)throw new HttpError(404,'User not found.');const level=Math.floor((await c.query(`SELECT COUNT(*) AS n FROM referrals WHERE referrer_id=$1 AND status='completed'`,[fromId])).rows[0].n/100);if(level<10)throw new HttpError(403,'You must reach Level 10 to transfer GPX.');const to=await c.query('SELECT id,username,first_name,last_name,gpx_wallet_address FROM users WHERE lower(gpx_wallet_address)=lower($1) FOR UPDATE',[String(address||'').trim()]);if(!to.rowCount)throw new HttpError(404,'Recipient GPX wallet was not found.');if(to.rows[0].id===fromId)throw new HttpError(400,'You cannot transfer to your own wallet.');if(!to.rows[0].gpx_wallet_address)throw new HttpError(400,'Recipient wallet is revoked.');const r=await c.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance>=$1 RETURNING balance',[n,fromId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[n,to.rows[0].id]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Sent GPX to @'||COALESCE($3,'user'))`,[fromId,-n,to.rows[0].username]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Received GPX from @'||COALESCE($3,'user'))`,[to.rows[0].id,n, (await c.query('SELECT username FROM users WHERE id=$1',[fromId])).rows[0].username]);return{amount:n,recipient:to.rows[0].username?`@${to.rows[0].username}`:displayName(to.rows[0]),recipientId:to.rows[0].id,balance:r.rows[0].balance};});const senderQ=await pool.query('SELECT first_name,last_name,username FROM users WHERE id=$1',[fromId]); const sender=senderQ.rows[0]||{}; const senderLabel=sender.username?`@${sender.username}`:displayName({id:fromId,...sender}); notifyUser(result.recipientId,`💚 Incoming GPX Transfer\n\n${senderLabel} sent you ${result.amount.toLocaleString()} GPX via Onchain Transfer.`);return result;}
+async function transferGpx(fromId,address,amount){const n=Math.floor(Number(amount));if(!Number.isFinite(n)||n<=0)throw new HttpError(400,'Enter a valid GPX amount.');const result=await tx(async(c)=>{const me=await c.query('SELECT id,balance,gpx_wallet_address FROM users WHERE id=$1 FOR UPDATE',[fromId]);if(!me.rowCount)throw new HttpError(404,'User not found.');const levelRow=await c.query(`SELECT level_override,(SELECT COUNT(*) FROM referrals WHERE referrer_id=$1 AND status='completed') AS referrals FROM users WHERE id=$1`,[fromId]); const level=levelRow.rows[0].level_override==null?Math.floor(Number(levelRow.rows[0].referrals)/100):Number(levelRow.rows[0].level_override);if(level<10)throw new HttpError(403,'You must reach Level 10 to transfer GPX.');const to=await c.query('SELECT id,username,first_name,last_name,gpx_wallet_address FROM users WHERE lower(gpx_wallet_address)=lower($1) FOR UPDATE',[String(address||'').trim()]);if(!to.rowCount)throw new HttpError(404,'Recipient GPX wallet was not found.');if(to.rows[0].id===fromId)throw new HttpError(400,'You cannot transfer to your own wallet.');if(!to.rows[0].gpx_wallet_address)throw new HttpError(400,'Recipient wallet is revoked.');const r=await c.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance>=$1 RETURNING balance',[n,fromId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[n,to.rows[0].id]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Sent GPX to @'||COALESCE($3,'user'))`,[fromId,-n,to.rows[0].username]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Received GPX from @'||COALESCE($3,'user'))`,[to.rows[0].id,n, (await c.query('SELECT username FROM users WHERE id=$1',[fromId])).rows[0].username]);return{amount:n,recipient:to.rows[0].username?`@${to.rows[0].username}`:displayName(to.rows[0]),recipientId:to.rows[0].id,balance:r.rows[0].balance};});const senderQ=await pool.query('SELECT first_name,last_name,username FROM users WHERE id=$1',[fromId]); const sender=senderQ.rows[0]||{}; const senderLabel=sender.username?`@${sender.username}`:displayName({id:fromId,...sender}); notifyUser(result.recipientId,`💚 Incoming GPX Transfer\n\n${senderLabel} sent you ${result.amount.toLocaleString()} GPX via Onchain Transfer.`);return result;}
 async function setNotifications(userId,enabled){await pool.query('UPDATE users SET notifications_enabled=$1 WHERE id=$2',[!!enabled,userId]);return !!enabled;}
 async function redeemPromo(userId,code){const result=await tx(async(c)=>{const q=await c.query('SELECT * FROM promo_codes WHERE upper(code)=upper($1) AND active FOR UPDATE',[String(code||'').trim()]);if(!q.rowCount)throw new HttpError(404,'Promo code not found.');const p=q.rows[0];if(p.max_uses>0&&p.uses>=p.max_uses)throw new HttpError(400,'This promo code has reached its usage limit.');const used=await c.query('SELECT 1 FROM promo_redemptions WHERE code=$1 AND user_id=$2',[p.code,userId]);if(used.rowCount)throw new HttpError(409,'You already used this promo code.');await c.query('INSERT INTO promo_redemptions(code,user_id) VALUES($1,$2)',[p.code,userId]);await c.query('UPDATE promo_codes SET uses=uses+1 WHERE code=$1',[p.code]);await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[p.reward,userId]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'promo',$3)`,[userId,p.reward,'Promo code: '+p.code]);return{reward:Number(p.reward)};});return result;}
+
+async function setUserLevel(userId, level) {
+  const n = Math.max(0, Math.min(1000, Math.floor(Number(level))));
+  if (!Number.isFinite(n)) throw new HttpError(400, 'Invalid level.');
+  const r = await pool.query('UPDATE users SET level_override=$1 WHERE id=$2 RETURNING level_override', [n, userId]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  return n;
+}
+
+async function addAdmin(userId, addedBy) {
+  const id = Number(userId);
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Enter a valid Telegram user ID.');
+  const u = await pool.query('SELECT id FROM users WHERE id=$1', [id]);
+  if (!u.rowCount) throw new HttpError(404, 'User must open the Mini App once before being added as an admin.');
+  await pool.query('INSERT INTO admin_users(user_id,added_by) VALUES($1,$2) ON CONFLICT (user_id) DO NOTHING', [id, addedBy]);
+  return true;
+}
+async function removeAdmin(userId) {
+  const id=Number(userId);
+  if (!Number.isInteger(id)||id<=0) throw new HttpError(400,'Invalid Telegram user ID.');
+  await pool.query('DELETE FROM admin_users WHERE user_id=$1',[id]);
+  return true;
+}
 
 module.exports = {
   money, displayName, notifyUser, notifyAdmins,
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
-  createWithdrawal, processWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
-  adjustBalance, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo
+  createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
+  adjustBalance, setUserLevel, addAdmin, removeAdmin, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo
 };

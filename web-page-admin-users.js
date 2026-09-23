@@ -17,7 +17,7 @@ export default {
             <b>${esc(u.name)}</b><b style="color:var(--blue)">${Number(u.balance).toLocaleString()+" GPX"}</b>
           </div>
           <div class="hint">${u.username ? "@" + esc(u.username) + " · " : ""}ID ${esc(u.id)} · ${u.referrals} referrals</div>
-          <div class="hint">Wallet: ${u.wallet_address ? esc(shortAddr(u.wallet_address)) : "not saved"} · Joined ${esc(fmtDate(u.created_at))}</div>
+          <div class="hint">Wallet: ${u.wallet_address ? esc(shortAddr(u.wallet_address)) : "not saved"} · Level ${Number(u.level_override ?? Math.floor(Number(u.referrals)/100))}${u.is_admin ? ' · ADMIN' : ''} · Joined ${esc(fmtDate(u.created_at))}</div>
           <div class="acts"><button class="btn sm ghost" data-id="${u.id}">Open</button></div>
         </div>`).join("") : `<div class="card empty">No users found.</div>`;
 
@@ -34,6 +34,8 @@ export default {
           <div class="hint">${u.username ? "@" + esc(u.username) + " · " : ""}ID ${esc(u.id)}</div>
           <div class="row"><span class="l">Balance</span><span class="r" id="bal">${Number(balance).toLocaleString()+" GPX"}</span></div>
           <div class="row"><span class="l">Wallet</span><span class="r mono" style="font-size:12px">${u.wallet_address ? esc(u.wallet_address) : "Not saved"}</span></div>
+          <label for="u-level">User level</label><input id="u-level" type="number" min="0" max="1000" value="${Number(u.level_override ?? Math.floor(Number(u.referrals)/100))}">
+          <div class="acts"><button class="btn sm ghost" id="save-level">Save Level</button>${u.is_admin ? `<button class="btn sm danger" id="remove-admin">Remove Admin</button>` : `<button class="btn sm" id="make-admin">Make Admin</button>`}</div>
           ${u.wallet_address ? `<div class="acts" style="margin-top:0"><button class="btn sm danger" id="reset">Reset wallet</button></div><p class="hint">Resetting lets this user save a different wallet.</p>` : ""}
           <label for="a-amt">Amount (USD)</label>
           <input id="a-amt" type="number" inputmode="decimal" step="any" placeholder="0.00">
@@ -63,6 +65,12 @@ export default {
         } catch (err) { fail(err); }
         btn.disabled = false;
       }
+
+      el.querySelector("#save-level").onclick=async()=>{try{const level=Number(el.querySelector("#u-level").value);await api.admin.setLevel(u.id,level);notify("User level updated.");haptic("success");}catch(err){fail(err)}};
+      const adminBtn=el.querySelector("#make-admin");
+      if(adminBtn) adminBtn.onclick=async()=>{try{await api.admin.addAdmin(u.id);notify("User is now an admin.");haptic("success");showUser({...u,is_admin:true});}catch(err){fail(err)}};
+      const removeAdmin=el.querySelector("#remove-admin");
+      if(removeAdmin) removeAdmin.onclick=async()=>{if(!(await confirmBox("Remove admin access from this user?")))return;try{await api.admin.removeAdmin(u.id);notify("Admin access removed.");haptic("success");showUser({...u,is_admin:false});}catch(err){fail(err)}};
 
       const reset = el.querySelector("#reset");
       if (reset) {

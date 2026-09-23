@@ -15,7 +15,7 @@ export const api={
  getLeaderboard:()=>http("/api/leaderboard"), getPromoCodes:()=>http("/api/promo-codes"), redeemPromo:(code)=>post("/api/promo-codes/redeem",{code}),
  claimTask:(id)=>post(`/api/tasks/${id}/claim`), startTask:(id)=>post(`/api/tasks/${id}/start`),
  convert:(amount)=>post("/api/convert",{amount}),
- requestWithdrawal:(payload)=>post("/api/withdrawals",payload), getWithdrawalStatus:(id)=>http(`/api/withdrawals/${id}/status`),
+ requestWithdrawal:(payload)=>post("/api/withdrawals",payload), saveWallet:(address)=>post("/api/wallet",{address}), getWithdrawalStatus:(id)=>http(`/api/withdrawals/${id}/status`),
  generateGpxWallet:()=>post("/api/gpx-wallet/generate"), revokeGpxWallet:()=>post("/api/gpx-wallet/revoke"),
  transferGpx:(address,amount)=>post("/api/onchain/transfer",{address,amount}),
  setNotifications:(enabled)=>post("/api/notifications",{enabled}),
@@ -23,9 +23,9 @@ export const api={
   overview:()=>http("/api/admin/overview"), getSettings:()=>http("/api/admin/settings"), saveSettings:(s)=>http("/api/admin/settings","PUT",s),
   channels:()=>http("/api/admin/channels"), createChannel:(c)=>post("/api/admin/channels",c), updateChannel:(id,c)=>http(`/api/admin/channels/${id}`,"PUT",c), deleteChannel:(id)=>http(`/api/admin/channels/${id}`,"DELETE"),
   tasks:()=>http("/api/admin/tasks"), createTask:(t)=>post("/api/admin/tasks",t), updateTask:(id,t)=>http(`/api/admin/tasks/${id}`,"PUT",t), deleteTask:(id)=>http(`/api/admin/tasks/${id}`,"DELETE"),
-  withdrawals:(status)=>http(`/api/admin/withdrawals?status=${encodeURIComponent(status)}`), sendWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/send`), payWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/paid`), rejectWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/reject`),
+  withdrawals:(status)=>http(`/api/admin/withdrawals?status=${encodeURIComponent(status)}`), sendWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/send`), approveWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/approve`), payWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/paid`), rejectWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/reject`),
   promoCodes:()=>http("/api/admin/promo-codes"), createPromo:(x)=>post("/api/admin/promo-codes",x), deletePromo:(code)=>http(`/api/admin/promo-codes/${encodeURIComponent(code)}`,"DELETE"),
-  users:(q)=>http(`/api/admin/users?q=${encodeURIComponent(q||"")}`), adjustBalance:(id,amount,note)=>post(`/api/admin/users/${id}/balance`,{amount,note}), resetWallet:(id)=>post(`/api/admin/users/${id}/wallet/reset`),
+  users:(q)=>http(`/api/admin/users?q=${encodeURIComponent(q||"")}`), adjustBalance:(id,amount,note)=>post(`/api/admin/users/${id}/balance`,{amount,note}), setLevel:(id,level)=>post(`/api/admin/users/${id}/level`,{level}), resetWallet:(id)=>post(`/api/admin/users/${id}/wallet/reset`), admins:()=>http("/api/admin/admins"), addAdmin:(id)=>post("/api/admin/admins",{id}), removeAdmin:(id)=>post(`/api/admin/admins/${id}/remove`),
   broadcast:(payload)=>post("/api/admin/broadcast",payload), broadcasts:()=>http("/api/admin/broadcasts")
  }
 };

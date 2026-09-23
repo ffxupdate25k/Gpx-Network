@@ -141,6 +141,10 @@ router.post('/withdrawals/:id/send', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+router.post('/withdrawals/:id/approve', wrap(async (req, res) => {
+  res.json(await svc.approveWithdrawal(parseInt(req.params.id, 10), req.user.id));
+}));
+
 router.post('/withdrawals/:id/paid', wrap(async (req, res) => {
   await svc.processWithdrawal(parseInt(req.params.id, 10), 'paid', req.user.id);
   res.json({ ok: true });
@@ -153,7 +157,8 @@ router.post('/withdrawals/:id/reject', wrap(async (req, res) => {
 
 // ---------- Users ----------
 const USER_SELECT = `
-  SELECT u.id, u.first_name, u.last_name, u.username, u.balance, u.created_at, u.wallet_address,
+  SELECT u.id, u.first_name, u.last_name, u.username, u.balance, u.created_at, u.wallet_address, u.level_override,
+         CASE WHEN EXISTS (SELECT 1 FROM admin_users a WHERE a.user_id=u.id) OR u.id = ANY($1::bigint[]) THEN true ELSE false END AS is_admin,
          (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id AND r.status = 'completed') AS referrals
     FROM users u`;
 
@@ -161,16 +166,37 @@ router.get('/users', wrap(async (req, res) => {
   const q = String(req.query.q || '').trim().replace(/^@/, '');
   let result;
   if (/^\d{3,}$/.test(q)) {
-    result = await pool.query(`${USER_SELECT} WHERE u.id = $1`, [q]);
+    result = await pool.query(`${USER_SELECT} WHERE u.id = $2`, [require('./srv-config').ADMIN_IDS, q]);
   } else if (q) {
     result = await pool.query(
-      `${USER_SELECT} WHERE u.username ILIKE $1 OR u.first_name ILIKE $1 ORDER BY u.created_at DESC LIMIT 20`,
-      ['%' + q + '%']
+      `${USER_SELECT} WHERE u.username ILIKE $2 OR u.first_name ILIKE $2 ORDER BY u.created_at DESC LIMIT 20`,
+      [require('./srv-config').ADMIN_IDS, '%' + q + '%']
     );
   } else {
-    result = await pool.query(`${USER_SELECT} ORDER BY u.created_at DESC LIMIT 20`);
+    result = await pool.query(`${USER_SELECT} ORDER BY u.created_at DESC LIMIT 20`, [require('./srv-config').ADMIN_IDS]);
   }
   res.json(result.rows.map((r) => ({ ...r, name: svc.displayName(r) })));
+}));
+
+router.post('/users/:id/level', wrap(async (req, res) => {
+  const level = await svc.setUserLevel(req.params.id, (req.body || {}).level);
+  res.json({ level });
+}));
+
+router.get('/admins', wrap(async (req, res) => {
+  const envIds = require('./srv-config').ADMIN_IDS;
+  const { rows } = await pool.query(`SELECT a.user_id, a.created_at, u.username, u.first_name, u.last_name FROM admin_users a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.created_at DESC`);
+  res.json({ env_ids: envIds, admins: rows.map(r => ({...r, id:r.user_id, name:svc.displayName(r)})) });
+}));
+
+router.post('/admins', wrap(async (req, res) => {
+  await svc.addAdmin((req.body || {}).id, req.user.id);
+  res.json({ ok:true });
+}));
+
+router.post('/admins/:id/remove', wrap(async (req, res) => {
+  await svc.removeAdmin(req.params.id);
+  res.json({ ok:true });
 }));
 
 router.post('/users/:id/balance', wrap(async (req, res) => {
