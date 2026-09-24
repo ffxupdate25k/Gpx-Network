@@ -17,7 +17,7 @@ export default {
             <b>${esc(u.name)}</b><b style="color:var(--blue)">${Number(u.balance).toLocaleString()+" GPX"}</b>
           </div>
           <div class="hint">${u.username ? "@" + esc(u.username) + " · " : ""}ID ${esc(u.id)} · ${u.referrals} referrals</div>
-          <div class="hint">Wallet: ${u.wallet_address ? esc(shortAddr(u.wallet_address)) : "not saved"} · Level ${Number(u.level_override ?? Math.floor(Number(u.referrals)/100))}${u.is_admin ? ' · ADMIN' : ''} · Joined ${esc(fmtDate(u.created_at))}</div>
+          <div class="hint">Wallet: ${u.wallet_address ? esc(shortAddr(u.wallet_address)) : "not saved"} · ${u.banned ? '<span class="badge b-err">BANNED</span> · ' : ''}Level ${Number(u.level_override ?? Math.floor(Number(u.referrals)/100))}${u.is_admin ? ' · ADMIN' : ''} · Joined ${esc(fmtDate(u.created_at))}</div>
           <div class="acts"><button class="btn sm ghost" data-id="${u.id}">Open</button></div>
         </div>`).join("") : `<div class="card empty">No users found.</div>`;
 
@@ -37,6 +37,7 @@ export default {
           <label for="u-level">User level</label><input id="u-level" type="number" min="0" max="1000" value="${Number(u.level_override ?? Math.floor(Number(u.referrals)/100))}">
           <div class="acts"><button class="btn sm ghost" id="save-level">Save Level</button>${u.is_admin ? `<button class="btn sm danger" id="remove-admin">Remove Admin</button>` : `<button class="btn sm" id="make-admin">Make Admin</button>`}</div>
           ${u.wallet_address ? `<div class="acts" style="margin-top:0"><button class="btn sm danger" id="reset">Reset wallet</button></div><p class="hint">Resetting lets this user save a different wallet.</p>` : ""}
+          <div class="acts" style="margin-top:8px"><button class="btn sm ${u.banned?'':'danger'}" id="ban">${u.banned?'Unban User':'Ban User'}</button></div>
           <label for="a-amt">Amount (USD)</label>
           <input id="a-amt" type="number" inputmode="decimal" step="any" placeholder="0.00">
           <label for="a-note">Note (optional, shown in their history)</label>
@@ -71,6 +72,9 @@ export default {
       if(adminBtn) adminBtn.onclick=async()=>{try{await api.admin.addAdmin(u.id);notify("User is now an admin.");haptic("success");showUser({...u,is_admin:true});}catch(err){fail(err)}};
       const removeAdmin=el.querySelector("#remove-admin");
       if(removeAdmin) removeAdmin.onclick=async()=>{if(!(await confirmBox("Remove admin access from this user?")))return;try{await api.admin.removeAdmin(u.id);notify("Admin access removed.");haptic("success");showUser({...u,is_admin:false});}catch(err){fail(err)}};
+
+      const banBtn=el.querySelector('#ban');
+      if(banBtn) banBtn.onclick=async()=>{const next=!u.banned;if(!next && !(await confirmBox('Unban this user?')))return;if(next && !(await confirmBox('Ban this user account? They will be blocked from the Mini App.')))return;try{await api.admin.banUser(u.id,next);u.banned=next;notify(next?'User banned.':'User unbanned.');haptic('success');showUser(u);}catch(err){fail(err)}};
 
       const reset = el.querySelector("#reset");
       if (reset) {

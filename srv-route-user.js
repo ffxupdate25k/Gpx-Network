@@ -57,6 +57,20 @@ router.post('/security/verify-pin',wrap(async(req,res)=>{res.json({ok:await svc.
 router.post('/security/biometric/register',wrap(async(req,res)=>{res.json({ok:await svc.registerBiometric(req.user.id,(req.body||{}).token,(req.body||{}).pin)});}));
 router.post('/security/biometric/verify',wrap(async(req,res)=>{res.json({ok:await svc.verifyBiometric(req.user.id,(req.body||{}).token)});}));
 router.post('/onchain/transfer',wrap(async(req,res)=>{const b=req.body||{};const security=b.security||{};if(security.type==='biometric')await svc.verifyBiometric(req.user.id,security.token);else await svc.verifyTransactionPin(req.user.id,security.pin);res.json(await svc.transferGpx(req.user.id,b.address,b.amount));}));
+router.post('/support',wrap(async(req,res)=>{
+  const q=String((req.body||{}).message||'').trim().slice(0,500);
+  if(!q) throw new HttpError(400,'Enter a message.');
+  const low=q.toLowerCase();
+  let answer='I can help with GPX Network. You can ask about withdrawals, GPX transfers, referrals, tasks, conversion, your wallet, or account support.';
+  if(/withdraw|cash.?out|payout|fee/.test(low)) answer='Withdrawals are reviewed by an admin before payout. Open Wallet → Withdraw, connect your USDT BEP20 wallet, enter the amount and submit. Your request stays Processing until it is approved or rejected.';
+  else if(/transfer|send gpx|onchain|pin|biometric/.test(low)) answer='For GPX transfers, open Onchain Transfer, enter the recipient GPX wallet and amount, verify the recipient profile, then confirm with your 4-digit Transaction PIN or enabled biometrics.';
+  else if(/referr|invite/.test(low)) answer='Your referral reward is credited after the referred user completes the required referral conditions. A pending referral does not trigger the referrer notification yet.';
+  else if(/convert|rate|usdt/.test(low)) answer='GPX conversion uses the rate configured by the administrator. Open Convert to see the current conversion requirements available to your account.';
+  else if(/task|reward/.test(low)) answer='Open Tasks to see available tasks and their GPX rewards. Follow each task instructions and complete its verification step.';
+  else if(/wallet|address/.test(low)) answer='Your payout wallet is your saved USDT BEP20 address. For GPX receiving, use your GPX wallet address shown in the Wallet or Onchain Transfer section.';
+  res.json({answer});
+}));
+
 router.post('/notifications',wrap(async(req,res)=>{res.json({enabled:await svc.setNotifications(req.user.id,(req.body||{}).enabled)});}));
 
 // Tasks with this user's progress. chat_id is never sent to users. For a timer task the

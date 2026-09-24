@@ -18,6 +18,7 @@ const requireAuth = wrap(async (req, res, next) => {
   req.user = await svc.registerUser(data.user, parseRef(data.start_param));
   const adminRow = await pool.query('SELECT 1 FROM admin_users WHERE user_id = $1 LIMIT 1', [req.user.id]);
   req.isAdmin = ADMIN_IDS.includes(Number(req.user.id)) || adminRow.rowCount > 0;
+  if (req.user.banned && !req.isAdmin) throw new HttpError(403, 'Your GPX Network account has been banned. Contact support.');
   next();
 });
 

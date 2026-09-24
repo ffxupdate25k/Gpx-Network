@@ -11,9 +11,10 @@ import wallet from "./web-page-wallet.js";
 import task from "./web-page-task.js";
 import leaderboard from "./web-page-leaderboard.js";
 import promo from "./web-page-promo.js";
+import support from "./web-page-support.js";
 import withdrawal from "./web-page-withdrawal.js";
 import admin from "./web-page-admin.js";
-const routes={home:dashboard,profile,invite,convert,onchain,wallet,task,leaderboard,promo,withdrawal,admin};
+const routes={home:dashboard,profile,invite,convert,onchain,wallet,task,leaderboard,promo,withdrawal,support,admin};
 if(!isTelegram()){document.getElementById("blocked").hidden=false;document.getElementById("boot-loader")?.remove();document.getElementById("route-loader")?.remove();} else boot();
 async function boot(){
  initTelegram(); const app=document.getElementById("app"); app.hidden=false;

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   biometric_token_hash TEXT,
   referred_by   BIGINT,
   bot_blocked   BOOLEAN NOT NULL DEFAULT FALSE,
+  banned        BOOLEAN NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gpx_wallet_address TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gpx_wallet_revoked_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS transaction_pin_hash TEXT;
@@ -219,7 +221,9 @@ const DEFAULTS = {
   auto_payout: 'true',
   payout_api_url: 'https://pt-kappa-ten.vercel.app/pay/bep20',
   payout_api_key: '',
-  payout_token_address: ''
+  payout_token_address: '',
+  payout_channel_enabled: 'false',
+  payout_channel: ''
 };
 
 async function init() {
@@ -240,7 +244,8 @@ async function getSettings(q = pool) {
     withdrawals_per_day:Number(raw.withdrawals_per_day), referral_milestones, notifications_default:raw.notifications_default==='true',
     min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee), welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
-    payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address
+    payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address,
+    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||''
   };
 }
 

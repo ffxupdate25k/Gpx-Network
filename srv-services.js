@@ -309,6 +309,14 @@ async function callPayoutApi(s, w) {
 }
 
 
+async function notifyPayoutChannel(w, txHash) {
+  const s = await getSettings();
+  if (!s.payout_channel_enabled || !s.payout_channel) return false;
+  const hash = txHash || 'Not returned';
+  const text = `New Withdrawal Approved\n\nAmount: ${money(w.payout_amount ?? w.amount)} USDT\nUser ID: ${w.user_id}\nTx hash: ${hash}\nHash: ${hash}\nStatus: Approved`;
+  try { await tgApi.sendMessage(s.payout_channel, text); return true; } catch (e) { console.error('payout channel:', e.message); return false; }
+}
+
 async function runPayout(id) {
   const s = await getSettings();
   const found = await pool.query(
@@ -341,6 +349,7 @@ async function runPayout(id) {
     });
     const link = r.txHash && /^0x[0-9a-fA-F]{64}$/.test(r.txHash) ? `\nTransaction: https://bscscan.com/tx/${r.txHash}` : '';
     notifyUser(w.user_id, `✅ Your withdrawal of ${amountText} was sent to ${where}.${link}`);
+    await notifyPayoutChannel(w, r.txHash);
     return;
   }
 
@@ -397,6 +406,7 @@ async function approveWithdrawal(id, adminId) {
     });
     const link = r.txHash && /^0x[0-9a-fA-F]{64}$/.test(r.txHash) ? `\nTransaction: https://bscscan.com/tx/${r.txHash}` : '';
     notifyUser(claimed.user_id, `✅ Your withdrawal of ${amountText} USDT was approved and sent to ${where}.${r.txHash ? `\nTX Hash: ${r.txHash}` : ''}${link}`.slice(0, 1000));
+    await notifyPayoutChannel(claimed, r.txHash);
     return {status:'paid', tx_hash:r.txHash||null};
   }
   if (r.kind === 'failed' || r.kind === 'config') {
@@ -572,6 +582,16 @@ async function removeAdmin(userId) {
   return true;
 }
 
+async function setUserBanned(userId, banned) {
+  const id = Number(userId);
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Invalid user ID.');
+  if (ADMIN_IDS.includes(id)) throw new HttpError(400, 'The main admin cannot be banned.');
+  const r = await pool.query('UPDATE users SET banned=$1 WHERE id=$2 RETURNING banned', [!!banned, id]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  if (banned) notifyUser(id, '🚫 Your GPX Network account has been banned. Contact support for assistance.');
+  return !!r.rows[0].banned;
+}
+
 // ---------- Transaction PIN + Telegram biometric security ----------
 function hashPin(pin, saltHex) {
   return crypto.scryptSync(String(pin), Buffer.from(saltHex, 'hex'), 64).toString('hex');
@@ -637,6 +657,6 @@ module.exports = {
   money, displayName, notifyUser, notifyAdmins,
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
   createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
-  adjustBalance, setUserLevel, addAdmin, removeAdmin, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
+  adjustBalance, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
   hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, getRecipientByGpxWallet
 };

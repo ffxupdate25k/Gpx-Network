@@ -11,6 +11,7 @@ async function http(path, method="GET", body) {
 }
 const post=(p,b)=>http(p,"POST",b===undefined?{}:b);
 export const api={
+ support:(message)=>post('/api/support',{message}),
  getGate:()=>http("/api/gate"), getMe:()=>http("/api/me"), getHistory:()=>http("/api/history"), getReferrals:()=>http("/api/referrals"), getTasks:()=>http("/api/tasks"),
  getLeaderboard:()=>http("/api/leaderboard"), getPromoCodes:()=>http("/api/promo-codes"), redeemPromo:(code)=>post("/api/promo-codes/redeem",{code}),
  claimTask:(id)=>post(`/api/tasks/${id}/claim`), startTask:(id)=>post(`/api/tasks/${id}/start`),
@@ -28,7 +29,7 @@ export const api={
   tasks:()=>http("/api/admin/tasks"), createTask:(t)=>post("/api/admin/tasks",t), updateTask:(id,t)=>http(`/api/admin/tasks/${id}`,"PUT",t), deleteTask:(id)=>http(`/api/admin/tasks/${id}`,"DELETE"),
   withdrawals:(status)=>http(`/api/admin/withdrawals?status=${encodeURIComponent(status)}`), sendWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/send`), approveWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/approve`), payWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/paid`), rejectWithdrawal:(id)=>post(`/api/admin/withdrawals/${id}/reject`),
   promoCodes:()=>http("/api/admin/promo-codes"), createPromo:(x)=>post("/api/admin/promo-codes",x), deletePromo:(code)=>http(`/api/admin/promo-codes/${encodeURIComponent(code)}`,"DELETE"),
-  users:(q)=>http(`/api/admin/users?q=${encodeURIComponent(q||"")}`), adjustBalance:(id,amount,note)=>post(`/api/admin/users/${id}/balance`,{amount,note}), setLevel:(id,level)=>post(`/api/admin/users/${id}/level`,{level}), resetWallet:(id)=>post(`/api/admin/users/${id}/wallet/reset`), admins:()=>http("/api/admin/admins"), addAdmin:(id)=>post("/api/admin/admins",{id}), removeAdmin:(id)=>post(`/api/admin/admins/${id}/remove`),
+  users:(q)=>http(`/api/admin/users?q=${encodeURIComponent(q||"")}`), adjustBalance:(id,amount,note)=>post(`/api/admin/users/${id}/balance`,{amount,note}), setLevel:(id,level)=>post(`/api/admin/users/${id}/level`,{level}), banUser:(id,banned)=>post(`/api/admin/users/${id}/ban`,{banned}), resetWallet:(id)=>post(`/api/admin/users/${id}/wallet/reset`), admins:()=>http("/api/admin/admins"), addAdmin:(id)=>post("/api/admin/admins",{id}), removeAdmin:(id)=>post(`/api/admin/admins/${id}/remove`),
   broadcast:(payload)=>post("/api/admin/broadcast",payload), broadcasts:()=>http("/api/admin/broadcasts")
  }
 };

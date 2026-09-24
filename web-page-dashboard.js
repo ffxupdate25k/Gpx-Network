@@ -20,6 +20,7 @@ export default{async render(el,{go}){
   <div class="balance"><div><small>Total Balance</small><strong>${Number(me.balance).toLocaleString(undefined,{maximumFractionDigits:2})} <i>GPX</i></strong><span>≈ $${Number(me.balance*0.0001).toFixed(2)} USDT</span></div><button class="wd" data-go="withdrawal">${icons.transfer}Withdraw</button></div>
   ${admin}
   <button class="banner" data-go="onchain"><span class="bic">${icons.transfer}</span><span class="btxt"><b>Onchain Transfer</b><small>Send & receive GPX instantly</small></span><span class="bbtn">Open ›</span></button>
+  <button class="banner" data-go="support"><span class="bic">?</span><span class="btxt"><b>Support</b><small>Chat with GPX Support AI</small></span><span class="bbtn">Chat ›</span></button>
   <div class="grid">${tiles.map(b=>`<div class="tile ${b.tone}" data-go="${b.go}" role="button" tabindex="0"><span class="ic">${icons[b.icon]}</span><b>${b.label}</b><small>${b.sub}</small><span class="tbtn">${b.btn}</span></div>`).join("")}</div>
  </div>${bottom("home")}</section>`;bind(el,go);}};
 function bottom(active){const n=(id,label,ic)=>`<button data-go="${id}" class="${active===id?"on":""}">${icons[ic]}<span>${label}</span></button>`;return `<nav class="bottom">${n("home","Home","home")}${n("task","Tasks","task")}${n("invite","Friends","invite")}${n("wallet","Wallet","wallet")}${n("profile","Profile","profile")}</nav>`}
