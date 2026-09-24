@@ -19,20 +19,24 @@ if(!isTelegram()){document.getElementById("blocked").hidden=false;document.getEl
 async function boot(){
  initTelegram(); const app=document.getElementById("app"); app.hidden=false;
  const bootLoader=document.getElementById("boot-loader"), routeLoader=document.getElementById("route-loader");
- const hideBoot=()=>{if(bootLoader){bootLoader.classList.add("hide");setTimeout(()=>bootLoader.remove(),300);}};
- const showRoute=()=>{if(routeLoader){routeLoader.classList.add("show");}};
- const hideRoute=()=>{if(routeLoader){routeLoader.classList.remove("show");}};
+ let bootHidden=false;
+ const hideBoot=()=>{if(bootHidden)return;bootHidden=true;if(bootLoader){bootLoader.classList.add("hide");setTimeout(()=>bootLoader.remove(),300);}};
+ const showRoute=()=>{if(routeLoader)routeLoader.classList.add("show");};
+ const hideRoute=()=>{if(routeLoader)routeLoader.classList.remove("show");};
  const wait=ms=>new Promise(r=>setTimeout(r,ms));
-
- function showError(err){app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
+ // Cosmetic splash only: it can never keep the Mini App stuck while an API call is slow.
+ setTimeout(hideBoot,1600);
+ function showError(err){hideBoot();app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
  async function enter(){
-  backButton.hide(); app.innerHTML=""; const started=performance.now();
-  try{const g=await api.getGate();if(!g.passed){await gate.render(app,{gate:g,onPass:enter});return;}}
-  catch(e){showError(e);return;}
-  await go("home",true);
-  await wait(Math.max(0,700-(performance.now()-started)));
-  hideBoot();
-}
+  backButton.hide(); app.innerHTML="";
+  try{
+   const g=await api.getGate();
+   if(!g.passed){hideBoot();await gate.render(app,{gate:g,onPass:enter});return;}
+   await go("home",true);
+   await wait(250);
+   hideBoot();
+  }catch(e){showError(e);}
+ }
  const stack=[]; let current="home";
  async function go(name,silent=false){
   if(name==="home")stack.length=0;else if(!silent&&current!==name)stack.push(current);
