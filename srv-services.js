@@ -316,10 +316,14 @@ async function createWithdrawal(user, amountIn) {
   const payoutAmount = Math.round((amount - fee) * 1000000) / 1000000;
   const todayQ = await pool.query(`
     SELECT
-      COALESCE((SELECT ads_watched_today FROM users WHERE id=$1),0) AS ads_watched_today,
+      CASE
+        WHEN ads_watch_date = CURRENT_DATE THEN COALESCE(ads_watched_today,0)
+        ELSE 0
+      END AS ads_watched_today,
       COALESCE((SELECT COUNT(*) FROM task_submissions ts WHERE ts.user_id=$1 AND ts.status='approved'
                 AND ts.reviewed_at >= date_trunc('day',now())),0) AS tasks_today,
       (SELECT last_withdrawal_at FROM users WHERE id=$1) AS last_withdrawal_at
+    FROM users WHERE id=$1
   `, [user.id]);
   const gate = todayQ.rows[0] || {};
   const watchedAds = Number(gate.ads_watched_today || 0);

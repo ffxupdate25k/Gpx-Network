@@ -22,6 +22,7 @@ export const api={
  getSecurity:()=>http('/api/security'), setPin:(pin,current_pin)=>post('/api/security/pin',{pin,current_pin}), verifyPin:(pin)=>post('/api/security/verify-pin',{pin}),
  registerBiometric:(token,pin)=>post('/api/security/biometric/register',{token,pin}), verifyBiometric:(token)=>post('/api/security/biometric/verify',{token}),
  transferGpx:(address,amount,security)=>post("/api/onchain/transfer",{address,amount,security}),
+ ads:{status:()=>http("/api/ads/status"),start:()=>post("/api/ads/start"),reward:(nonce)=>post("/api/ads/reward",{nonce})},
  setNotifications:(enabled)=>post("/api/notifications",{enabled}),
  admin:{
   overview:()=>http("/api/admin/overview"), getSettings:()=>http("/api/admin/settings"), saveSettings:(s)=>http("/api/admin/settings","PUT",s),

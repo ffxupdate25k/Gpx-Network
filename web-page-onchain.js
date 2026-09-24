@@ -47,8 +47,8 @@ export default{async render(el,{go}){const me=await api.getMe();let recipient=nu
         }
         const r=await bmAuth(bm);
         if(r.isAuthenticated&&r.biometricToken){
-          await api.registerBiometric(r.biometricToken,made.pin);
-          return {type:'biometric',token:r.biometricToken};
+          const registered=await api.registerBiometric(r.biometricToken,made.pin);
+          if(registered?.ok!==false) return {type:'biometric',token:r.biometricToken};
         }
       }catch(e){ /* fall back to the PIN */ }
     }

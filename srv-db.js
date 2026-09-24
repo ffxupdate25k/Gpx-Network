@@ -126,6 +126,17 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS transactions_user_idx ON transactions(user_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS ad_claims (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nonce_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS ad_claims_user_idx ON ad_claims(user_id, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ad_claims_nonce_hash_uniq ON ad_claims(nonce_hash);
+
+
 CREATE TABLE IF NOT EXISTS withdrawals (
   id             SERIAL PRIMARY KEY,
   user_id        BIGINT NOT NULL REFERENCES users(id),
@@ -226,7 +237,7 @@ const DEFAULTS = {
   required_tasks_before_withdrawal: '2',
   withdrawal_cooldown_hours: '24',
   monetag_zone_id: '11878092',
-  monetag_sdk_src: '',
+  monetag_sdk_src: 'https://libtl.com/sdk.js',
   welcome_text: 'Welcome to GPX Network! Tap the button below to open the app and start earning GPX.',
   welcome_photo_url: '',
   welcome_emoji_ids: '',
@@ -257,7 +268,7 @@ async function getSettings(q = pool) {
     min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee),
     ad_reward_gpx:Number(raw.ad_reward_gpx), max_ads_per_day:Number(raw.max_ads_per_day),
     required_ads_before_withdrawal:Number(raw.required_ads_before_withdrawal), required_tasks_before_withdrawal:Number(raw.required_tasks_before_withdrawal),
-    withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours), monetag_zone_id:String(raw.monetag_zone_id||'11878092'), monetag_sdk_src:String(raw.monetag_sdk_src||''), welcome_text:raw.welcome_text,
+    withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours), monetag_zone_id:'11878092', monetag_sdk_src:'https://libtl.com/sdk.js', welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
     payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address,
     payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||''

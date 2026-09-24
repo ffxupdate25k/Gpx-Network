@@ -1,0 +1,38 @@
+GPX Network - Monetag configuration
+=====================================
+
+Monetag is hard-coded into this build.
+
+Zone ID:
+11878092
+
+SDK:
+https://libtl.com/sdk.js
+
+The app loads:
+<script src="//libtl.com/sdk.js" data-zone="11878092" data-sdk="show_11878092"></script>
+
+Rewarded ads:
+show_11878092()
+
+In-app interstitial:
+show_11878092({
+  type: 'inApp',
+  inAppSettings: {
+    frequency: 2,
+    capping: 0.1,
+    interval: 30,
+    timeout: 5,
+    everyPage: false
+  }
+})
+
+Admin-configurable values:
+- GPX reward per completed ad
+- Maximum ads per user per day
+- Ads required before withdrawal
+- Tasks required before withdrawal
+- Withdrawal cooldown
+- Other existing GPX/withdrawal settings
+
+The Monetag SDK URL and zone ID are intentionally not editable in the Admin Panel.
