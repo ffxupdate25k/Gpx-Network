@@ -26,16 +26,29 @@ async function boot(){
  const hideRoute=()=>{if(routeLoader){routeLoader.classList.remove("show");}};
  const wait=ms=>new Promise(r=>setTimeout(r,ms));
 
- function showError(err){app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
+ let onGate=false;
+ function showError(err){hideBoot();hideRoute();app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
  async function enter(){
   backButton.hide(); app.innerHTML=""; const started=performance.now();
-  try{const g=await api.getGate();if(!g.passed){await gate.render(app,{gate:g,onPass:enter});return;}}
-  catch(e){showError(e);return;}
-  await go("home",true);
-  setTimeout(()=>startInAppInterstitial(),2500);
-  await wait(Math.max(0,700-(performance.now()-started)));
-  hideBoot();
-}
+  let g;
+  try{g=await api.getGate();}
+  catch(e){onGate=false;showError(e);return;}
+  if(!g.passed){
+   // The user still has channels to join: show the gate and take the loading screen away.
+   onGate=true;
+   try{await gate.render(app,{gate:g,onPass:enter});}
+   catch(e){onGate=false;showError(e);return;}
+   hideBoot();hideRoute();
+   return;
+  }
+  onGate=false;
+  try{await go("home",true);}
+  finally{
+   setTimeout(()=>startInAppInterstitial(),2500);
+   await wait(Math.max(0,700-(performance.now()-started)));
+   hideBoot();hideRoute();
+  }
+ }
  const stack=[]; let current="home";
  async function go(name,silent=false){
   if(name==="home")stack.length=0;else if(!silent&&current!==name)stack.push(current);
@@ -44,6 +57,6 @@ async function boot(){
   try{await page.render(app,{go});
     if(!silent) await wait(Math.max(0,300-(performance.now()-navStarted)));
     if(!silent) hideRoute();
-app.querySelectorAll(".page-back").forEach(b=>b.onclick=()=>go(stack.pop()||"home",true));app.querySelectorAll("[data-go]").forEach(b=>{if(!b.onclick)b.onclick=()=>{tap();go(b.dataset.go);};});}catch(e){if(!silent)hideRoute();if(e.gate)return enter();app.innerHTML=`<div class="empty">Couldn’t load this page.<br>${esc(e.message)}</div>`;}}
- backButton.onClick(()=>go(stack.pop()||"home",true)); window.addEventListener("gpx:gate",enter); enter(); setInterval(async()=>{if(document.hidden||current==="admin")return;try{await api.getMe();}catch(_){ }},15000);
+app.querySelectorAll(".page-back").forEach(b=>b.onclick=()=>go(stack.pop()||"home",true));app.querySelectorAll("[data-go]").forEach(b=>{if(!b.onclick)b.onclick=()=>{tap();go(b.dataset.go);};});}catch(e){hideRoute();if(e.gate)return enter();app.innerHTML=`<div class="empty">Couldn’t load this page.<br>${esc(e.message)}</div>`;}}
+ backButton.onClick(()=>go(stack.pop()||"home",true)); window.addEventListener("gpx:gate",enter); enter(); setInterval(async()=>{if(document.hidden||current==="admin"||onGate)return;try{await api.getMe();}catch(e){if(e&&e.gate)enter();}},15000);
 }

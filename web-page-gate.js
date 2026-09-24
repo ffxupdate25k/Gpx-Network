@@ -42,7 +42,7 @@ export default {
                         ${c.joined ? "Joined" : c.error ? "Check unavailable" : "Required"}
                       </span>
                     </div>
-                    <small>${c.joined ? "Membership confirmed" : c.error ? "Tap verify again after a moment" : "Join this community to continue"}</small>
+                    <small>${c.joined ? "Membership confirmed" : c.error ? "Could not verify this channel. Tap verify again; if it keeps failing, contact support." : "Join this community to continue"}</small>
                   </div>
                   ${c.joined
                     ? `<div class="gate-check">✓</div>`

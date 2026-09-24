@@ -169,6 +169,9 @@ CREATE TABLE IF NOT EXISTS broadcasts (
 
 // Upgrades for databases created by an earlier version. Old referrals were paid instantly, so they stay 'completed'.
 const MIGRATIONS = `
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS url TEXT NOT NULL DEFAULT '';
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE referrals ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed';
 ALTER TABLE referrals ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 

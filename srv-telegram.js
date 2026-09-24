@@ -5,7 +5,8 @@ async function call(method, params = {}) {
   const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(10000) // a slow Telegram call must never hang the app
   });
   let data;
   try { data = await res.json(); } catch (e) { data = { ok: false, description: 'Bad response from Telegram' }; }

@@ -3,8 +3,10 @@ import { tg } from "./web-telegram.js";
 const authHeader = () => ({ Authorization: "tma " + tg.initData });
 async function http(path, method="GET", body) {
   let res;
-  try { res = await fetch(CONFIG.API_BASE + path, { method, headers:{"Content-Type":"application/json", ...authHeader()}, body: body!==undefined?JSON.stringify(body):undefined }); }
-  catch(e){ throw new Error("No connection. Check your internet and try again."); }
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 25000);
+  try { res = await fetch(CONFIG.API_BASE + path, { method, signal: ctl.signal, headers:{"Content-Type":"application/json", ...authHeader()}, body: body!==undefined?JSON.stringify(body):undefined }); }
+  catch(e){ throw new Error(e && e.name === "AbortError" ? "The server took too long to answer. Please try again." : "No connection. Check your internet and try again."); }
+  finally { clearTimeout(timer); }
   const data=await res.json().catch(()=>({}));
   if(!res.ok){ const err=new Error(data.error||"Request failed ("+res.status+")"); err.status=res.status; err.gate=!!data.gate; throw err; }
   return data;

@@ -9,7 +9,7 @@ function escapeHtml(s) {
 }
 
 function parseEmojiIds(raw) {
-  return String(raw || '').split(/[,\\n ]+/).map(s => s.trim()).filter(Boolean).slice(0, 50);
+  return String(raw || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean).slice(0, 50);
 }
 
 function buildWelcomeHtml(text, rawIds, user = {}) {
