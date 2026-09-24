@@ -213,3 +213,40 @@
 .task-order-num input{font-size:13px!important;padding:8px!important;text-align:center}
 .task-order-main{min-width:0}
 @media(max-width:360px){.history-tabs .tab{font-size:9px}.admin-task-row{grid-template-columns:28px 48px 1fr;gap:6px}}
+
+
+/* GPX Network accent theme: blue + subtle emerald green + white */
+:root {
+  --gpx-blue: #1683ff;
+  --gpx-cyan: #18c8ff;
+  --gpx-navy: #06152f;
+  --gpx-green: #19d37a;
+  --gpx-green-deep: #0aa85c;
+  --gpx-white: #ffffff;
+}
+
+/* Subtle green highlights for a premium blue/black interface */
+.gpx-green-accent,
+.accent-green,
+.success,
+.status-success,
+.badge-success {
+  color: var(--gpx-green);
+}
+
+.gpx-green-bg,
+.bg-green-accent {
+  background: linear-gradient(135deg, var(--gpx-green), var(--gpx-green-deep));
+}
+
+.gpx-blue-green-gradient {
+  background: linear-gradient(135deg, var(--gpx-blue) 0%, var(--gpx-cyan) 55%, var(--gpx-green) 100%);
+}
+
+.gpx-accent-border {
+  border-color: rgba(25, 211, 122, 0.45);
+}
+
+.gpx-accent-glow {
+  box-shadow: 0 0 24px rgba(25, 211, 122, 0.18);
+}
