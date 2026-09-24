@@ -13,30 +13,27 @@ import leaderboard from "./web-page-leaderboard.js";
 import promo from "./web-page-promo.js";
 import support from "./web-page-support.js";
 import withdrawal from "./web-page-withdrawal.js";
-import admin from "./web-page-admin.js";
+import admin from "./web-page-admin.js"; import {startInAppInterstitial} from "./web-ads.js";
 const routes={home:dashboard,profile,invite,convert,onchain,wallet,task,leaderboard,promo,withdrawal,support,admin};
 if(!isTelegram()){document.getElementById("blocked").hidden=false;document.getElementById("boot-loader")?.remove();document.getElementById("route-loader")?.remove();} else boot();
 async function boot(){
  initTelegram(); const app=document.getElementById("app"); app.hidden=false;
  const bootLoader=document.getElementById("boot-loader"), routeLoader=document.getElementById("route-loader");
- let bootHidden=false;
- const hideBoot=()=>{if(bootHidden)return;bootHidden=true;if(bootLoader){bootLoader.classList.add("hide");setTimeout(()=>bootLoader.remove(),300);}};
- const showRoute=()=>{if(routeLoader)routeLoader.classList.add("show");};
- const hideRoute=()=>{if(routeLoader)routeLoader.classList.remove("show");};
+ const hideBoot=()=>{if(bootLoader){bootLoader.classList.add("hide");setTimeout(()=>bootLoader.remove(),300);}};
+ const showRoute=()=>{if(routeLoader){routeLoader.classList.add("show");}};
+ const hideRoute=()=>{if(routeLoader){routeLoader.classList.remove("show");}};
  const wait=ms=>new Promise(r=>setTimeout(r,ms));
- // Cosmetic splash only: it can never keep the Mini App stuck while an API call is slow.
- setTimeout(hideBoot,1600);
- function showError(err){hideBoot();app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
+
+ function showError(err){app.innerHTML=`<div class="empty">${esc(err.message)}<div class="gap"></div><button class="btn" id="retry">Try again</button></div>`;app.querySelector("#retry").onclick=enter;}
  async function enter(){
-  backButton.hide(); app.innerHTML="";
-  try{
-   const g=await api.getGate();
-   if(!g.passed){hideBoot();await gate.render(app,{gate:g,onPass:enter});return;}
-   await go("home",true);
-   await wait(250);
-   hideBoot();
-  }catch(e){showError(e);}
- }
+  backButton.hide(); app.innerHTML=""; const started=performance.now();
+  try{const g=await api.getGate();if(!g.passed){await gate.render(app,{gate:g,onPass:enter});return;}}
+  catch(e){showError(e);return;}
+  await go("home",true);
+  setTimeout(()=>startInAppInterstitial(),2500);
+  await wait(Math.max(0,700-(performance.now()-started)));
+  hideBoot();
+}
  const stack=[]; let current="home";
  async function go(name,silent=false){
   if(name==="home")stack.length=0;else if(!silent&&current!==name)stack.push(current);

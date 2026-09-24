@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS users (
   transaction_pin_hash TEXT,
   transaction_pin_salt TEXT,
   biometric_token_hash TEXT,
+  ads_watch_date DATE,
+  ads_watched_today INT NOT NULL DEFAULT 0,
   referred_by   BIGINT,
   bot_blocked   BOOLEAN NOT NULL DEFAULT FALSE,
   banned        BOOLEAN NOT NULL DEFAULT FALSE,
@@ -138,14 +140,6 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   payout_amount  NUMERIC(18,6)
 );
 
-CREATE TABLE IF NOT EXISTS ad_watches (
-  id SERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  reward NUMERIC(14,4) NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ad_watches_user_day_idx ON ad_watches(user_id, created_at);
-
 CREATE TABLE IF NOT EXISTS broadcasts (
   id         SERIAL PRIMARY KEY,
   text       TEXT NOT NULL,
@@ -186,6 +180,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS gpx_wallet_revoked_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS transaction_pin_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS transaction_pin_salt TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS biometric_token_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ads_watch_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ads_watched_today INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_withdrawal_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS users_gpx_wallet_uniq ON users(lower(gpx_wallet_address)) WHERE gpx_wallet_address IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_uniq ON users (lower(wallet_address)) WHERE wallet_address IS NOT NULL;
 
@@ -223,6 +220,13 @@ const DEFAULTS = {
   min_withdraw: '0.10',
   max_withdraw: '0',
   withdrawal_fee: '0.10',
+  ad_reward_gpx: '100',
+  max_ads_per_day: '30',
+  required_ads_before_withdrawal: '10',
+  required_tasks_before_withdrawal: '2',
+  withdrawal_cooldown_hours: '24',
+  monetag_zone_id: '11878092',
+  monetag_sdk_src: '',
   welcome_text: 'Welcome to GPX Network! Tap the button below to open the app and start earning GPX.',
   welcome_photo_url: '',
   welcome_emoji_ids: '',
@@ -231,14 +235,7 @@ const DEFAULTS = {
   payout_api_key: '',
   payout_token_address: '',
   payout_channel_enabled: 'false',
-  payout_channel: '',
-  monetag_zone_id: '11878092',
-  monetag_enabled: 'true',
-  ad_reward_gpx: '50',
-  max_ads_per_day: '30',
-  ads_required_withdrawal: '10',
-  tasks_required_withdrawal: '2',
-  withdrawal_cooldown_hours: '0'
+  payout_channel: ''
 };
 
 async function init() {
@@ -257,14 +254,13 @@ async function getSettings(q = pool) {
   return {
     referral_reward:Number(raw.referral_reward), gpx_per_001_usdt:Number(raw.gpx_per_001_usdt), min_conversion_gpx:Number(raw.min_conversion_gpx),
     withdrawals_per_day:Number(raw.withdrawals_per_day), referral_milestones, notifications_default:raw.notifications_default==='true',
-    min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee), welcome_text:raw.welcome_text,
+    min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee),
+    ad_reward_gpx:Number(raw.ad_reward_gpx), max_ads_per_day:Number(raw.max_ads_per_day),
+    required_ads_before_withdrawal:Number(raw.required_ads_before_withdrawal), required_tasks_before_withdrawal:Number(raw.required_tasks_before_withdrawal),
+    withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours), monetag_zone_id:String(raw.monetag_zone_id||'11878092'), monetag_sdk_src:String(raw.monetag_sdk_src||''), welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
     payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address,
-    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||'',
-    monetag_zone_id:raw.monetag_zone_id||'11878092', monetag_enabled:raw.monetag_enabled==='true',
-    ad_reward_gpx:Number(raw.ad_reward_gpx), max_ads_per_day:Number(raw.max_ads_per_day),
-    ads_required_withdrawal:Number(raw.ads_required_withdrawal), tasks_required_withdrawal:Number(raw.tasks_required_withdrawal),
-    withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours)
+    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||''
   };
 }
 

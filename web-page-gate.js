@@ -17,9 +17,9 @@ export default {
             <p>Join all the channels below to unlock GPX Network.</p>
           </div>
           <div class="body">
-            <div class="gate-grid">
+            <div class="card">
               ${channels.map((c) => `
-                <div class="gate-channel">
+                <div class="row">
                   <div>
                     <b style="font-size:15px">${esc(c.title)}</b>
                     <div class="hist-date">${c.joined ? "✅ Joined" : c.error ? "⚠️ Can't check right now" : "Not joined yet"}</div>

@@ -2,23 +2,11 @@
 const { BOT_TOKEN } = require('./srv-config');
 
 async function call(method, params = {}) {
-  // Keep a Telegram API outage or network stall from freezing the Mini App gate forever.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7000);
-  let res;
-  try {
-    res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: controller.signal
-    });
-  } catch (e) {
-    if (e && e.name === 'AbortError') throw new Error('Telegram request timed out. Please try again.');
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
   let data;
   try { data = await res.json(); } catch (e) { data = { ok: false, description: 'Bad response from Telegram' }; }
   if (!data.ok) {

@@ -228,17 +228,72 @@ async function completeTimerTask(task, userId) {
   });
 }
 
-async function rewardAd(userId, format='rewarded') {
-  const s=await getSettings();
-  const max=Math.max(0,Math.floor(s.max_ads_per_day||0));
-  if(max<=0) throw new HttpError(400,'Ads are currently disabled.');
-  const reward=Math.max(0,Number(s.ad_reward_gpx||0));
-  return tx(async(c)=>{
-    const q=await c.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[userId]);
-    if(Number(q.rows[0].n)>=max) throw new HttpError(400,`Daily ad limit reached (${max}).`);
-    await c.query(`INSERT INTO ad_watches(user_id,reward) VALUES($1,$2)`,[userId,reward]);
-    if(reward>0){await c.query(`UPDATE users SET balance=balance+$1 WHERE id=$2`,[reward,userId]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'ad', $3)`,[userId,reward,'Watched Monetag ad']);}
-    return {reward,balance:(await c.query('SELECT balance FROM users WHERE id=$1',[userId])).rows[0].balance,watched_today:Number(q.rows[0].n)+1,max_ads_per_day:max};
+
+// ---------- Monetag rewarded ads ----------
+async function adStatus(userId) {
+  const s = await getSettings();
+  const r = await pool.query(`
+    SELECT ads_watch_date, ads_watched_today,
+           COALESCE((SELECT COUNT(*) FROM task_submissions ts
+                     WHERE ts.user_id=u.id AND ts.status='approved'
+                       AND ts.reviewed_at >= date_trunc('day', now())),0) AS tasks_today
+      FROM users u WHERE u.id=$1`, [userId]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  const row = r.rows[0];
+  let watched = Number(row.ads_watched_today || 0);
+  if (row.ads_watch_date && new Date(row.ads_watch_date).toISOString().slice(0,10) !== new Date().toISOString().slice(0,10)) watched = 0;
+  if (!row.ads_watch_date) watched = 0;
+  return {
+    watched_today: watched,
+    max_ads_per_day: Math.max(0, Number(s.max_ads_per_day || 0)),
+    reward_gpx: Math.max(0, Number(s.ad_reward_gpx || 0)),
+    remaining: Math.max(0, Number(s.max_ads_per_day || 0) - watched),
+    tasks_today: Number(row.tasks_today || 0),
+    required_ads_before_withdrawal: Math.max(0, Number(s.required_ads_before_withdrawal || 0)),
+    required_tasks_before_withdrawal: Math.max(0, Number(s.required_tasks_before_withdrawal || 0)),
+    monetag_zone_id: String(s.monetag_zone_id || '11878092'), monetag_sdk_src: String(s.monetag_sdk_src || '')
+  };
+}
+
+async function startAd(userId) {
+  const s = await getSettings();
+  const max = Math.max(0, Number(s.max_ads_per_day || 0));
+  const nonce = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(nonce).digest('hex');
+  const today = new Date().toISOString().slice(0,10);
+  return tx(async (c) => {
+    const r = await c.query(`SELECT ads_watch_date,ads_watched_today FROM users WHERE id=$1 FOR UPDATE`, [userId]);
+    if (!r.rowCount) throw new HttpError(404, 'User not found.');
+    let watched = Number(r.rows[0].ads_watched_today || 0);
+    if (!r.rows[0].ads_watch_date || new Date(r.rows[0].ads_watch_date).toISOString().slice(0,10) !== today) {
+      watched = 0;
+      await c.query(`UPDATE users SET ads_watch_date=$1,ads_watched_today=0 WHERE id=$2`, [today,userId]);
+    }
+    if (max > 0 && watched >= max) throw new HttpError(400, `You have reached today's ${max} ad limit. Come back tomorrow.`);
+    await c.query(`DELETE FROM ad_claims WHERE user_id=$1 AND (expires_at < now() OR used_at IS NOT NULL)`, [userId]);
+    await c.query(`INSERT INTO ad_claims(user_id,nonce_hash,expires_at) VALUES($1,$2,now()+interval '5 minutes')`, [userId,hash]);
+    return { nonce, reward_gpx: Math.max(0,Number(s.ad_reward_gpx||0)), watched_today: watched, remaining: Math.max(0,max-watched) };
+  });
+}
+
+async function rewardAd(userId, nonce) {
+  const s = await getSettings();
+  const hash = crypto.createHash('sha256').update(String(nonce || '')).digest('hex');
+  const reward = Math.max(0, Number(s.ad_reward_gpx || 0));
+  const max = Math.max(0, Number(s.max_ads_per_day || 0));
+  return tx(async (c) => {
+    const claim = await c.query(`SELECT id FROM ad_claims WHERE user_id=$1 AND nonce_hash=$2 AND used_at IS NULL AND expires_at>now() FOR UPDATE`, [userId,hash]);
+    if (!claim.rowCount) throw new HttpError(400, 'This ad session is invalid or has expired. Please start another ad.');
+    const r = await c.query(`SELECT ads_watch_date,ads_watched_today FROM users WHERE id=$1 FOR UPDATE`, [userId]);
+    if (!r.rowCount) throw new HttpError(404,'User not found.');
+    const today = new Date().toISOString().slice(0,10);
+    let watched = Number(r.rows[0].ads_watched_today || 0);
+    if (!r.rows[0].ads_watch_date || new Date(r.rows[0].ads_watch_date).toISOString().slice(0,10) !== today) watched = 0;
+    if (max > 0 && watched >= max) throw new HttpError(400, `You have reached today's ${max} ad limit.`);
+    await c.query(`UPDATE ad_claims SET used_at=now() WHERE id=$1`, [claim.rows[0].id]);
+    const u = await c.query(`UPDATE users SET ads_watch_date=$1,ads_watched_today=$2,balance=balance+$3 WHERE id=$4 RETURNING balance,ads_watched_today`, [today,watched+1,reward,userId]);
+    if (reward > 0) await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'ad',$3)`, [userId,reward,'Monetag Ad Reward']);
+    return { reward, balance:Number(u.rows[0].balance), watched_today:Number(u.rows[0].ads_watched_today), remaining:Math.max(0,max-(watched+1)) };
   });
 }
 
@@ -259,21 +314,36 @@ async function createWithdrawal(user, amountIn) {
   const fee = Math.round(Number(s.withdrawal_fee || 0) * 1000000) / 1000000;
   if (fee >= amount) throw new HttpError(400, `Withdrawal fee is ${fee.toFixed(2)} USDT. Enter an amount higher than the fee.`);
   const payoutAmount = Math.round((amount - fee) * 1000000) / 1000000;
+  const todayQ = await pool.query(`
+    SELECT
+      COALESCE((SELECT ads_watched_today FROM users WHERE id=$1),0) AS ads_watched_today,
+      COALESCE((SELECT COUNT(*) FROM task_submissions ts WHERE ts.user_id=$1 AND ts.status='approved'
+                AND ts.reviewed_at >= date_trunc('day',now())),0) AS tasks_today,
+      (SELECT last_withdrawal_at FROM users WHERE id=$1) AS last_withdrawal_at
+  `, [user.id]);
+  const gate = todayQ.rows[0] || {};
+  const watchedAds = Number(gate.ads_watched_today || 0);
+  const tasksToday = Number(gate.tasks_today || 0);
+  const requiredAds = Math.max(0, Number(s.required_ads_before_withdrawal || 0));
+  const requiredTasks = Math.max(0, Number(s.required_tasks_before_withdrawal || 0));
+  if (requiredAds > 0 && watchedAds < requiredAds) throw new HttpError(400, `Watch ${requiredAds - watchedAds} more ad(s) before withdrawing.`);
+  if (requiredTasks > 0 && tasksToday < requiredTasks) throw new HttpError(400, `Complete ${requiredTasks - tasksToday} more task(s) before withdrawing.`);
+  const cooldown = Math.max(0, Number(s.withdrawal_cooldown_hours || 0));
+  if (cooldown > 0 && gate.last_withdrawal_at) {
+    const elapsedHours = (Date.now() - new Date(gate.last_withdrawal_at).getTime()) / 3600000;
+    if (elapsedHours < cooldown) {
+      const remain = Math.ceil((cooldown - elapsedHours) * 60);
+      throw new HttpError(400, `Withdrawal cooldown active. Try again in ${Math.floor(remain/60)}h ${remain%60}m.`);
+    }
+  }
   const countQ = await pool.query(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id=$1 AND created_at>=date_trunc('day',now())`, [user.id]);
   if (Number(countQ.rows[0].n) >= s.withdrawals_per_day) throw new HttpError(400, `You can make only ${s.withdrawals_per_day} withdrawals per day.`);
-  if (s.withdrawal_cooldown_hours>0) {
-    const last=await pool.query(`SELECT created_at FROM withdrawals WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`,[user.id]);
-    if(last.rowCount && (Date.now()-new Date(last.rows[0].created_at).getTime()) < s.withdrawal_cooldown_hours*3600000) throw new HttpError(400,`Please wait ${s.withdrawal_cooldown_hours} hour(s) before another withdrawal.`);
-  }
-  const adQ=await pool.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[user.id]);
-  if(Number(adQ.rows[0].n)<s.ads_required_withdrawal) throw new HttpError(400,`Complete ${s.ads_required_withdrawal} ads before withdrawing.`);
-  const taskQ=await pool.query(`SELECT COUNT(*) AS n FROM task_submissions WHERE user_id=$1 AND status='approved' AND created_at>=date_trunc('day',now())`,[user.id]);
-  if(Number(taskQ.rows[0].n)<s.tasks_required_withdrawal) throw new HttpError(400,`Complete ${s.tasks_required_withdrawal} tasks before withdrawing.`);
   const result = await tx(async (c) => {
     const r = await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance', [amount, user.id]);
     if (!r.rowCount) throw new HttpError(400, 'Amount is higher than your USDT balance.');
     const t = await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal',$3,'pending') RETURNING id`, [user.id, -amount, `USDT Withdrawal (fee $${fee.toFixed(2)})`]);
     const w = await c.query(`INSERT INTO withdrawals(user_id,amount,fee,payout_amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5,$6,'manual') RETURNING id`, [user.id, amount, fee, payoutAmount, address, t.rows[0].id]);
+    await c.query(`UPDATE users SET last_withdrawal_at=now() WHERE id=$1`, [user.id]);
     return { id: w.rows[0].id, balance: r.rows[0].usdt_balance, fee, payout_amount: payoutAmount };
   });
   notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT (fee ${fee.toFixed(2)}, send ${payoutAmount.toFixed(2)} USDT) from ${displayName(user)} (ID ${user.id}). Open Admin Panel > Withdrawals to approve or reject it.`);
@@ -676,9 +746,9 @@ async function getRecipientByGpxWallet(address) {
 }
 
 module.exports = {
-  money, displayName, notifyUser, notifyAdmins,
+  money, displayName, notifyUser, notifyAdmins, adStatus, startAd, rewardAd,
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
   createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
-  adjustBalance, rewardAd, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
+  adjustBalance, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
   hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, getRecipientByGpxWallet
 };
