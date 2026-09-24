@@ -12,9 +12,14 @@ function parseEmojiIds(raw) {
   return String(raw || '').split(/[,\\n ]+/).map(s => s.trim()).filter(Boolean).slice(0, 50);
 }
 
-function buildWelcomeHtml(text, rawIds) {
+function buildWelcomeHtml(text, rawIds, user = {}) {
   const ids = parseEmojiIds(rawIds);
-  let html = escapeHtml(text);
+  let html = escapeHtml(text)
+    .replace(/\{firstname\}/gi, escapeHtml(user.first_name || 'User'))
+    .replace(/\{lastname\}/gi, escapeHtml(user.last_name || ''))
+    .replace(/\{fullname\}/gi, escapeHtml(((user.first_name||'') + ' ' + (user.last_name||'')).trim() || 'User'))
+    .replace(/\{username\}/gi, escapeHtml(user.username ? '@'+user.username : 'No username'))
+    .replace(/\{userid\}/gi, String(user.id || ''));
   ids.forEach((id, i) => {
     const n = i + 1;
     // The inner emoji is a normal fallback character; Telegram replaces it with the custom emoji entity.
