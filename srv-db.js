@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   timer_seconds INT NOT NULL DEFAULT 10 CHECK (timer_seconds BETWEEN 3 AND 86400),
   chat_id     TEXT NOT NULL DEFAULT '',
   active      BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order  INT NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -215,6 +216,15 @@ ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS buttons JSONB NOT NULL DEFAULT '
 -- Timer-based tasks: instead of a screenshot, a per-task countdown (seconds) runs after the
 -- user opens the task link, and the reward is credited once enough time has genuinely passed.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT NOT NULL DEFAULT 10;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INT;
+WITH ordered AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n
+  FROM tasks
+)
+UPDATE tasks t SET sort_order = o.n FROM ordered o WHERE o.id = t.id AND (t.sort_order IS NULL OR t.sort_order = 0);
+ALTER TABLE tasks ALTER COLUMN sort_order SET DEFAULT 0;
+UPDATE tasks SET sort_order = id WHERE sort_order IS NULL OR sort_order = 0;
+CREATE INDEX IF NOT EXISTS tasks_sort_order_idx ON tasks(sort_order, id);
 UPDATE tasks SET verify_type = 'timer' WHERE verify_type = 'screenshot';
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_verify_type_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_verify_type_check CHECK (verify_type IN ('auto','timer'));

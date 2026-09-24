@@ -11,23 +11,60 @@ export default {
       const list = await api.admin.tasks();
       el.innerHTML = `
         <button class="btn" id="new">New task</button>
-        <div class="gap"></div>
-        ${list.length ? list.map((t) => `
-          <div class="card">
-            <div class="head" style="display:flex;justify-content:space-between;gap:8px">
-              <b>${esc(t.title)}</b>
-              <span class="reward" style="color:var(--ok);font-weight:800">+${Number(t.reward).toLocaleString()+" GPX"}</span>
+        <p class="hint task-order-hint">Drag a task by the handle to move it anywhere, or edit its order number. The order users see is saved automatically when you tap Save Order.</p>
+        <div id="task-order-list">
+        ${list.length ? list.map((t, i) => `
+          <div class="card admin-task-row" draggable="true" data-id="${t.id}">
+            <div class="task-drag" title="Drag to reorder">☷</div>
+            <div class="task-order-num"><label>Order</label><input class="order-input" type="number" min="1" value="${i+1}" data-id="${t.id}"></div>
+            <div class="task-order-main">
+              <div class="head" style="display:flex;justify-content:space-between;gap:8px">
+                <b>${esc(t.title)}</b>
+                <span class="reward" style="color:var(--ok);font-weight:800">+${Number(t.reward).toLocaleString()+" GPX"}</span>
+              </div>
+              <div class="hint">${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"} · ${t.completed} completed</div>
+              <div class="acts">
+                <span class="badge ${t.active ? "b-ok" : "b-pend"}">${t.active ? "Active" : "Paused"}</span>
+                <button class="btn sm ghost" data-act="edit" data-id="${t.id}">Edit</button>
+                <button class="btn sm ghost" data-act="toggle" data-id="${t.id}">${t.active ? "Pause" : "Resume"}</button>
+                <button class="btn sm danger" data-act="delete" data-id="${t.id}">Delete</button>
+              </div>
             </div>
-            <div class="hint">${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"} · ${t.completed} completed</div>
-            <div class="acts">
-              <span class="badge ${t.active ? "b-ok" : "b-pend"}">${t.active ? "Active" : "Paused"}</span>
-              <button class="btn sm ghost" data-act="edit" data-id="${t.id}">Edit</button>
-              <button class="btn sm ghost" data-act="toggle" data-id="${t.id}">${t.active ? "Pause" : "Resume"}</button>
-              <button class="btn sm danger" data-act="delete" data-id="${t.id}">Delete</button>
-            </div>
-          </div>`).join("") : `<div class="card empty">No tasks yet.<br>Create your first task.</div>`}`;
+          </div>`).join("") : `<div class="card empty">No tasks yet.<br>Create your first task.</div>`}
+        </div>
+        ${list.length ? `<button class="btn" id="save-order">Save Order</button>` : ""}`;
 
       el.querySelector("#new").onclick = () => showForm(null);
+
+      const container = el.querySelector("#task-order-list");
+      let dragged = null;
+      container?.querySelectorAll(".admin-task-row").forEach(row => {
+        row.addEventListener("dragstart", () => { dragged = row; row.classList.add("dragging"); });
+        row.addEventListener("dragend", () => { dragged = null; row.classList.remove("dragging"); [...container.querySelectorAll(".admin-task-row")].forEach((r,i)=>{ const input=r.querySelector(".order-input"); if(input) input.value=i+1; }); });
+        row.addEventListener("dragover", e => {
+          e.preventDefault();
+          if (!dragged || dragged === row) return;
+          const rect = row.getBoundingClientRect();
+          const after = e.clientY > rect.top + rect.height / 2;
+          container.insertBefore(dragged, after ? row.nextSibling : row);
+        });
+      });
+
+      el.querySelector("#save-order")?.addEventListener("click", async () => {
+        const rows = [...container.querySelectorAll(".admin-task-row")];
+        const byPosition = new Map();
+        rows.forEach((row, index) => {
+          const input = row.querySelector(".order-input");
+          byPosition.set(row.dataset.id, Math.max(1, Number(input.value) || index + 1));
+        });
+        const sorted = rows.slice().sort((a,b) => byPosition.get(a.dataset.id)-byPosition.get(b.dataset.id));
+        const ids = sorted.map(r => Number(r.dataset.id));
+        const save = el.querySelector("#save-order");
+        save.disabled = true;
+        try { await api.admin.reorderTasks(ids); haptic("success"); await showList(); }
+        catch (err) { save.disabled = false; fail(err); }
+      });
+
       el.querySelectorAll("[data-act]").forEach((b) => {
         b.onclick = async () => {
           const t = list.find((x) => String(x.id) === b.dataset.id);
@@ -48,7 +85,7 @@ export default {
     }
 
     function showForm(t) {
-      const v = t || { title: "", description: "", reward: "", url: "", verify_type: "timer", chat_id: "", timer_seconds: 10, active: true };
+      const v = t || { title: "", description: "", reward: "", url: "", verify_type: "timer", chat_id: "", timer_seconds: 10, active: true, sort_order: 0 };
       el.innerHTML = `
         <div class="card">
           <b>${t ? "Edit task" : "New task"}</b>
@@ -104,7 +141,8 @@ export default {
           verify_type: type.value,
           chat_id: el.querySelector("#f-chat").value,
           timer_seconds: el.querySelector("#f-secs").value,
-          active: el.querySelector("#f-active").checked
+          active: el.querySelector("#f-active").checked,
+          sort_order: Number(v.sort_order || 0)
         };
         save.disabled = true;
         try {

@@ -94,7 +94,7 @@ async function validateTask(b) {
       throw new HttpError(400, 'Countdown must be between 3 and 86400 seconds.');
     }
   }
-  return { title, description, reward, url, verify_type, chat_id, timer_seconds, active };
+  return { title, description, reward, url, verify_type, chat_id, timer_seconds, active, sort_order: Number.isFinite(Number(b.sort_order)) ? Math.max(0, Math.floor(Number(b.sort_order))) : 0 };
 }
 
 router.get('/tasks', wrap(async (req, res) => {
@@ -118,11 +118,34 @@ router.post('/tasks', wrap(async (req, res) => {
 router.put('/tasks/:id', wrap(async (req, res) => {
   const t = await validateTask(req.body || {});
   const r = await pool.query(
-    `UPDATE tasks SET title=$1, description=$2, reward=$3, url=$4, verify_type=$5, chat_id=$6, timer_seconds=$7, active=$8 WHERE id=$9`,
-    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, parseInt(req.params.id, 10)]
+    `UPDATE tasks SET title=$1, description=$2, reward=$3, url=$4, verify_type=$5, chat_id=$6, timer_seconds=$7, active=$8, sort_order=$9 WHERE id=$10`,
+    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.sort_order, parseInt(req.params.id, 10)]
   );
   if (!r.rowCount) throw new HttpError(404, 'Task not found.');
   res.json({ ok: true });
+}));
+
+router.post('/tasks/reorder', wrap(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => parseInt(id, 10)).filter(Boolean) : [];
+  if (!ids.length) throw new HttpError(400, 'No task order was provided.');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT id FROM tasks ORDER BY sort_order, id');
+    const existingIds = existing.rows.map(r => Number(r.id));
+    const unique = [...new Set(ids)];
+    const ordered = unique.concat(existingIds.filter(id => !unique.includes(id)));
+    for (let i = 0; i < ordered.length; i++) {
+      await client.query('UPDATE tasks SET sort_order=$1 WHERE id=$2', [i + 1, ordered[i]]);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }));
 
 router.delete('/tasks/:id', wrap(async (req, res) => {

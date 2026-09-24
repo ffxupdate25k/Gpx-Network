@@ -345,10 +345,10 @@ async function createWithdrawal(user, amountIn) {
   const result = await tx(async (c) => {
     const r = await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance', [amount, user.id]);
     if (!r.rowCount) throw new HttpError(400, 'Amount is higher than your USDT balance.');
-    const t = await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal',$3,'pending') RETURNING id`, [user.id, -amount, `USDT Withdrawal (fee $${fee.toFixed(2)})`]);
+    const t = await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal',$3,'pending') RETURNING id`, [user.id, -amount, 'USDT Withdrawal']);
     const w = await c.query(`INSERT INTO withdrawals(user_id,amount,fee,payout_amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5,$6,'manual') RETURNING id`, [user.id, amount, fee, payoutAmount, address, t.rows[0].id]);
     await c.query(`UPDATE users SET last_withdrawal_at=now() WHERE id=$1`, [user.id]);
-    return { id: w.rows[0].id, balance: r.rows[0].usdt_balance, fee, payout_amount: payoutAmount };
+    return { id: w.rows[0].id, balance: r.rows[0].usdt_balance };
   });
   notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT (fee ${fee.toFixed(2)}, send ${payoutAmount.toFixed(2)} USDT) from ${displayName(user)} (ID ${user.id}). Open Admin Panel > Withdrawals to approve or reject it.`);
   return { ...result, auto: false };

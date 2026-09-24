@@ -27,7 +27,7 @@ router.get('/me', wrap(async (req,res)=>{
   const referrals=Number(ref.rows[0].n); const level=Math.max(0, Number(req.user.level_override ?? Math.floor(referrals/100))); const next=(level+1)*100;
   const wallet=req.user.gpx_wallet_address || await svc.ensureGpxWallet(req.user.id);
   const ads=await svc.adStatus(req.user.id);
-  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawal_fee:s.withdrawal_fee,withdrawals_per_day:s.withdrawals_per_day,ad_status:ads});
+  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawals_per_day:s.withdrawals_per_day,ad_status:ads});
 }));
 router.get('/ads/status', wrap(async (req,res)=>res.json(await svc.adStatus(req.user.id))));
 router.post('/ads/start', wrap(async (req,res)=>res.json(await svc.startAd(req.user.id))));
@@ -91,7 +91,7 @@ router.get('/tasks', wrap(async (req, res) => {
           WHERE task_id = t.id AND user_id = $1
           ORDER BY (status = 'approved') DESC, (status = 'pending') DESC, id DESC LIMIT 1
        ) s ON true
-      WHERE t.active ORDER BY t.id`,
+      WHERE t.active ORDER BY t.sort_order, t.id`,
     [req.user.id]
   );
   res.json(rows.map((r) => ({
@@ -174,7 +174,7 @@ router.get('/withdrawals/:id/status', wrap(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) throw new HttpError(404, 'Withdrawal not found.');
   const { rows } = await pool.query(
-    `SELECT id, amount, fee, payout_amount, address, status, payout_state, tx_hash, note, created_at
+    `SELECT id, amount, address, status, payout_state, tx_hash, note, created_at
        FROM withdrawals WHERE id = $1 AND user_id = $2`,
     [id, req.user.id]
   );
@@ -188,8 +188,6 @@ router.get('/withdrawals/:id/status', wrap(async (req, res) => {
     payout_state: w.payout_state,
     tx_hash: w.tx_hash || null,
     note: w.note || null,
-    fee: Number(w.fee || 0),
-    payout_amount: Number(w.payout_amount ?? w.amount),
     created_at: w.created_at
   });
 }));

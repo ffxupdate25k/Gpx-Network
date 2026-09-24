@@ -185,3 +185,31 @@
 .requirement-done{font-size:9px;color:#2a9d4a;background:#effbf1;padding:9px;border-radius:8px;margin-top:7px}
 .req-summary{margin-top:10px;padding:9px;border-radius:9px;background:#fff8e9;border:1px solid #f2e0b8;color:#8a6c27;font-size:9px;font-weight:700;text-align:center}.req-summary.ready{background:#edfff0;border-color:#bfe8c7;color:#239143}
 .ad-how{padding:13px}.how-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid #edf3ef}.how-row i{font-style:normal;width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#e5fae8;color:#20b94a;font-size:9px;font-weight:900}.how-row span{display:block}.how-row b{display:block;font-size:9px;color:#234b3c}.how-row small{display:block;font-size:8px;color:#7c9089;margin-top:2px}
+
+/* History */
+.linkbtn{border:0;background:transparent;color:#20bd4d;font-weight:800;padding:0;font-size:12px}
+.history-tabs{display:grid;grid-template-columns:repeat(4,1fr);padding:7px 10px;gap:5px}
+.history-tabs .tab{padding:9px 5px;font-size:10px}
+.history-row{width:100%;display:flex;align-items:center;gap:9px;padding:11px 0;border:0;border-bottom:1px solid #edf3ef;background:transparent;text-align:left}
+.history-row:last-child{border-bottom:0}
+.history-main{flex:1;min-width:0}
+.history-main b,.history-main small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-main b{font-size:12px}
+.history-main small{font-size:9px;color:#80958c;margin-top:3px}
+.history-row strong{font-size:11px;white-space:nowrap}
+.chev{color:#9aada5;font-size:18px}
+.history-detail{text-align:left}
+.history-detail .detail-icon{width:56px;height:56px;border-radius:16px;background:#e6fbe9;color:#20bd4d;display:grid;place-items:center;font-size:26px;margin:4px auto 10px}
+.history-detail h2{text-align:center;font-size:18px;margin:0 0 12px}
+.wrap{overflow-wrap:anywhere;max-width:65%;text-align:right}
+.history-detail .info{margin-top:10px}
+
+/* Admin task ordering */
+.task-order-hint{margin:10px 2px 12px}
+.admin-task-row{display:grid;grid-template-columns:34px 55px 1fr;gap:9px;align-items:start;cursor:grab}
+.admin-task-row.dragging{opacity:.55;transform:scale(.99)}
+.task-drag{font-size:25px;color:#719087;text-align:center;padding-top:8px;cursor:grab;user-select:none}
+.task-order-num label{font-size:9px!important;margin:0 0 4px!important}
+.task-order-num input{font-size:13px!important;padding:8px!important;text-align:center}
+.task-order-main{min-width:0}
+@media(max-width:360px){.history-tabs .tab{font-size:9px}.admin-task-row{grid-template-columns:28px 48px 1fr;gap:6px}}
