@@ -228,6 +228,20 @@ async function completeTimerTask(task, userId) {
   });
 }
 
+async function rewardAd(userId, format='rewarded') {
+  const s=await getSettings();
+  const max=Math.max(0,Math.floor(s.max_ads_per_day||0));
+  if(max<=0) throw new HttpError(400,'Ads are currently disabled.');
+  const reward=Math.max(0,Number(s.ad_reward_gpx||0));
+  return tx(async(c)=>{
+    const q=await c.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[userId]);
+    if(Number(q.rows[0].n)>=max) throw new HttpError(400,`Daily ad limit reached (${max}).`);
+    await c.query(`INSERT INTO ad_watches(user_id,reward) VALUES($1,$2)`,[userId,reward]);
+    if(reward>0){await c.query(`UPDATE users SET balance=balance+$1 WHERE id=$2`,[reward,userId]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'ad', $3)`,[userId,reward,'Watched Monetag ad']);}
+    return {reward,balance:(await c.query('SELECT balance FROM users WHERE id=$1',[userId])).rows[0].balance,watched_today:Number(q.rows[0].n)+1,max_ads_per_day:max};
+  });
+}
+
 // ---------- Withdrawals and automatic payout ----------
 const shortAddr = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '');
 
@@ -247,6 +261,14 @@ async function createWithdrawal(user, amountIn) {
   const payoutAmount = Math.round((amount - fee) * 1000000) / 1000000;
   const countQ = await pool.query(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id=$1 AND created_at>=date_trunc('day',now())`, [user.id]);
   if (Number(countQ.rows[0].n) >= s.withdrawals_per_day) throw new HttpError(400, `You can make only ${s.withdrawals_per_day} withdrawals per day.`);
+  if (s.withdrawal_cooldown_hours>0) {
+    const last=await pool.query(`SELECT created_at FROM withdrawals WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`,[user.id]);
+    if(last.rowCount && (Date.now()-new Date(last.rows[0].created_at).getTime()) < s.withdrawal_cooldown_hours*3600000) throw new HttpError(400,`Please wait ${s.withdrawal_cooldown_hours} hour(s) before another withdrawal.`);
+  }
+  const adQ=await pool.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[user.id]);
+  if(Number(adQ.rows[0].n)<s.ads_required_withdrawal) throw new HttpError(400,`Complete ${s.ads_required_withdrawal} ads before withdrawing.`);
+  const taskQ=await pool.query(`SELECT COUNT(*) AS n FROM task_submissions WHERE user_id=$1 AND status='approved' AND created_at>=date_trunc('day',now())`,[user.id]);
+  if(Number(taskQ.rows[0].n)<s.tasks_required_withdrawal) throw new HttpError(400,`Complete ${s.tasks_required_withdrawal} tasks before withdrawing.`);
   const result = await tx(async (c) => {
     const r = await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance', [amount, user.id]);
     if (!r.rowCount) throw new HttpError(400, 'Amount is higher than your USDT balance.');
@@ -657,6 +679,6 @@ module.exports = {
   money, displayName, notifyUser, notifyAdmins,
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
   createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
-  adjustBalance, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
+  adjustBalance, rewardAd, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
   hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, getRecipientByGpxWallet
 };

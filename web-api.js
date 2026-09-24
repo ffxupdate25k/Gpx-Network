@@ -12,7 +12,7 @@ async function http(path, method="GET", body) {
 const post=(p,b)=>http(p,"POST",b===undefined?{}:b);
 export const api={
  support:(message)=>post('/api/support',{message}),
- getGate:()=>http("/api/gate"), getMe:()=>http("/api/me"), getHistory:()=>http("/api/history"), getReferrals:()=>http("/api/referrals"), getTasks:()=>http("/api/tasks"),
+ getGate:()=>http("/api/gate"), getMe:()=>http("/api/me"), getHistory:()=>http("/api/history"), getReferrals:()=>http("/api/referrals"), getTasks:()=>http("/api/tasks"), getAdStats:()=>http("/api/ads/stats"), watchAd:(payload)=>post("/api/ads/reward",payload),
  getLeaderboard:()=>http("/api/leaderboard"), getPromoCodes:()=>http("/api/promo-codes"), redeemPromo:(code)=>post("/api/promo-codes/redeem",{code}),
  claimTask:(id)=>post(`/api/tasks/${id}/claim`), startTask:(id)=>post(`/api/tasks/${id}/start`),
  convert:(amount)=>post("/api/convert",{amount}),

@@ -1,4 +1,4 @@
-import {api} from "./web-api.js"; import {getUser,getDisplayName,tap} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js";
+import {api} from "./web-api.js"; import {getUser,getDisplayName,tap,notify,haptic} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js";
 
 // Big, bold cards. Each one fills its half of the screen and ends with a full-width action button.
 const tiles=[
@@ -21,8 +21,12 @@ export default{async render(el,{go}){
   ${admin}
   <button class="banner" data-go="onchain"><span class="bic">${icons.transfer}</span><span class="btxt"><b>Onchain Transfer</b><small>Send & receive GPX instantly</small></span><span class="bbtn">Open ›</span></button>
   <button class="banner" data-go="support"><span class="bic">?</span><span class="btxt"><b>Support</b><small>Chat with GPX Support AI</small></span><span class="bbtn">Chat ›</span></button>
+  <button class="banner ad-banner" id="watchAds"><span class="bic">▶</span><span class="btxt"><b>Watch Ads & Earn</b><small id="adSub">Watch Monetag ads to earn GPX</small></span><span class="bbtn">Watch ›</span></button>
   <div class="grid">${tiles.map(b=>`<div class="tile ${b.tone}" data-go="${b.go}" role="button" tabindex="0"><span class="ic">${icons[b.icon]}</span><b>${b.label}</b><small>${b.sub}</small><span class="tbtn">${b.btn}</span></div>`).join("")}</div>
- </div>${bottom("home")}</section>`;bind(el,go);}};
+ </div>${bottom("home")}</section>`;bind(el,go);
+ try{const adcfg=await api.getAdStats(); const fn=window['show_'+adcfg.zone_id]; if(adcfg.monetag_enabled&&typeof fn==='function'){fn({type:'inApp',inAppSettings:{frequency:2,capping:0.1,interval:30,timeout:5,everyPage:false}}).catch(()=>{});}}catch(_){}
+ const ad=el.querySelector('#watchAds'); if(ad){ad.onclick=async()=>{try{const st=await api.getAdStats(); if(!st.monetag_enabled)return notify('Ads are currently disabled.'); if(st.watched_today>=st.max_ads_per_day)return notify('You reached today's ad limit.'); const fn=window['show_'+st.zone_id]; if(typeof fn!=='function')return notify('Monetag ad service is not ready yet.'); ad.disabled=true; ad.querySelector('.bbtn').textContent='Watching…'; await fn(); const r=await api.watchAd({format:'rewarded'}); notify(`+${Number(r.reward).toLocaleString()} GPX earned.`); ad.querySelector('#adSub')?.replaceChildren(document.createTextNode(`${r.watched_today}/${r.max_ads_per_day} ads today`)); haptic('success'); }catch(e){notify(e.message||'Ad could not be completed.')}finally{ad.disabled=false;ad.querySelector('.bbtn').textContent='Watch ›';}}}
+ }};
 function bottom(active){const n=(id,label,ic)=>`<button data-go="${id}" class="${active===id?"on":""}">${icons[ic]}<span>${label}</span></button>`;return `<nav class="bottom">${n("home","Home","home")}${n("task","Tasks","task")}${n("invite","Friends","invite")}${n("wallet","Wallet","wallet")}${n("profile","Profile","profile")}</nav>`}
 export function bind(el,go){el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tap();go(b.dataset.go);});}
 export {bottom};

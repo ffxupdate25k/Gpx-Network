@@ -138,6 +138,14 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   payout_amount  NUMERIC(18,6)
 );
 
+CREATE TABLE IF NOT EXISTS ad_watches (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reward NUMERIC(14,4) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ad_watches_user_day_idx ON ad_watches(user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS broadcasts (
   id         SERIAL PRIMARY KEY,
   text       TEXT NOT NULL,
@@ -223,7 +231,14 @@ const DEFAULTS = {
   payout_api_key: '',
   payout_token_address: '',
   payout_channel_enabled: 'false',
-  payout_channel: ''
+  payout_channel: '',
+  monetag_zone_id: '11878092',
+  monetag_enabled: 'true',
+  ad_reward_gpx: '50',
+  max_ads_per_day: '30',
+  ads_required_withdrawal: '10',
+  tasks_required_withdrawal: '2',
+  withdrawal_cooldown_hours: '0'
 };
 
 async function init() {
@@ -245,7 +260,11 @@ async function getSettings(q = pool) {
     min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee), welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
     payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address,
-    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||''
+    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||'',
+    monetag_zone_id:raw.monetag_zone_id||'11878092', monetag_enabled:raw.monetag_enabled==='true',
+    ad_reward_gpx:Number(raw.ad_reward_gpx), max_ads_per_day:Number(raw.max_ads_per_day),
+    ads_required_withdrawal:Number(raw.ads_required_withdrawal), tasks_required_withdrawal:Number(raw.tasks_required_withdrawal),
+    withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours)
   };
 }
 

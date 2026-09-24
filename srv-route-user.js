@@ -22,12 +22,21 @@ router.use(requireGate);
 router.get('/me', wrap(async (req,res)=>{
   const s=await getSettings();
   const ref=await pool.query(`SELECT COUNT(*) AS n,COALESCE(SUM(reward),0) AS earned FROM referrals WHERE referrer_id=$1 AND status='completed'`,[req.user.id]);
-  const tasks=await pool.query(`SELECT COUNT(*) AS n FROM task_submissions WHERE user_id=$1 AND status='approved'`,[req.user.id]);
+  const tasks=await pool.query(`SELECT COUNT(*) AS n FROM task_submissions WHERE user_id=$1 AND status='approved' AND created_at>=date_trunc('day',now())`,[req.user.id]);
+  const ads=await pool.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[req.user.id]);
   const total=await pool.query(`SELECT COALESCE(SUM(amount),0) AS n FROM transactions WHERE user_id=$1 AND amount>0`,[req.user.id]);
   const referrals=Number(ref.rows[0].n); const level=Math.max(0, Number(req.user.level_override ?? Math.floor(referrals/100))); const next=(level+1)*100;
   const wallet=req.user.gpx_wallet_address || await svc.ensureGpxWallet(req.user.id);
-  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawal_fee:s.withdrawal_fee,withdrawals_per_day:s.withdrawals_per_day});
+  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawals_per_day:s.withdrawals_per_day,
+    ads_today:Number(ads.rows[0].n),max_ads_per_day:s.max_ads_per_day,ad_reward_gpx:s.ad_reward_gpx,ads_required_withdrawal:s.ads_required_withdrawal,tasks_required_withdrawal:s.tasks_required_withdrawal,withdrawal_cooldown_hours:s.withdrawal_cooldown_hours});
 }));
+router.get('/ads/stats', wrap(async (req,res)=>{
+  const s=await getSettings();
+  const q=await pool.query(`SELECT COUNT(*) AS n FROM ad_watches WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[req.user.id]);
+  res.json({watched_today:Number(q.rows[0].n),max_ads_per_day:s.max_ads_per_day,reward_gpx:s.ad_reward_gpx,monetag_enabled:s.monetag_enabled,zone_id:s.monetag_zone_id});
+}));
+router.post('/ads/reward', wrap(async(req,res)=>{ res.json(await svc.rewardAd(req.user.id,(req.body||{}).format||'rewarded')); }));
+
 router.get('/history', wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT t.title, t.amount, t.status, t.type, t.created_at AS date,
