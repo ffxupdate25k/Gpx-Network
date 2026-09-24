@@ -55,7 +55,7 @@ export default{async render(el,{go}){const me=await api.getMe();let recipient=nu
     return {type:'pin',pin:made.pin};
   }
   if(canBio){
-    return await pinSheet({canBio:true,hasBio:sec.has_biometric,needSetup:false});
+    return await pinSheet({canBio:true,hasBio:true,needSetup:false});
   }
   return await pinSheet({canBio:false,hasBio:false,needSetup:false});
  };
