@@ -97,9 +97,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   verify_type TEXT NOT NULL CHECK (verify_type IN ('auto','timer')),
   timer_seconds INT NOT NULL DEFAULT 10 CHECK (timer_seconds BETWEEN 3 AND 86400),
   chat_id     TEXT NOT NULL DEFAULT '',
-  active      BOOLEAN NOT NULL DEFAULT TRUE,
-  sort_order  INT NOT NULL DEFAULT 0,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  active          BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order      INT NOT NULL DEFAULT 0,
+  max_completions INT NOT NULL DEFAULT 0 CHECK (max_completions >= 0),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS task_submissions (
@@ -217,6 +218,7 @@ ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS buttons JSONB NOT NULL DEFAULT '
 -- user opens the task link, and the reward is credited once enough time has genuinely passed.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT NOT NULL DEFAULT 10;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS max_completions INT NOT NULL DEFAULT 0;
 WITH ordered AS (
   SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS n
   FROM tasks
@@ -224,6 +226,7 @@ WITH ordered AS (
 UPDATE tasks t SET sort_order = o.n FROM ordered o WHERE o.id = t.id AND (t.sort_order IS NULL OR t.sort_order = 0);
 ALTER TABLE tasks ALTER COLUMN sort_order SET DEFAULT 0;
 UPDATE tasks SET sort_order = id WHERE sort_order IS NULL OR sort_order = 0;
+UPDATE tasks SET max_completions = 0 WHERE max_completions IS NULL OR max_completions < 0;
 CREATE INDEX IF NOT EXISTS tasks_sort_order_idx ON tasks(sort_order, id);
 UPDATE tasks SET verify_type = 'timer' WHERE verify_type = 'screenshot';
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_verify_type_check;
@@ -237,6 +240,7 @@ const DEFAULTS = {
   min_conversion_gpx: '1000',
   withdrawals_per_day: '2',
   referral_milestones: '[{"referrals":100,"reward":500},{"referrals":500,"reward":2500},{"referrals":1000,"reward":10000}]',
+  referral_reward_message: '🎉 New referral!\n\nName: {{name}}\nUsername: {{username}}\nReward: +{{reward}} GPX\nYour completed referrals: {{referrals}}\nLevel: {{level}}\n\n{{milestone}}',
   notifications_default: 'true',
   min_withdraw: '0.10',
   max_withdraw: '0',
@@ -274,7 +278,7 @@ async function getSettings(q = pool) {
   let referral_milestones=[]; try { referral_milestones=JSON.parse(raw.referral_milestones||'[]'); } catch(_) {}
   return {
     referral_reward:Number(raw.referral_reward), gpx_per_001_usdt:Number(raw.gpx_per_001_usdt), min_conversion_gpx:Number(raw.min_conversion_gpx),
-    withdrawals_per_day:Number(raw.withdrawals_per_day), referral_milestones, notifications_default:raw.notifications_default==='true',
+    withdrawals_per_day:Number(raw.withdrawals_per_day), referral_milestones, referral_reward_message:raw.referral_reward_message || DEFAULTS.referral_reward_message, notifications_default:raw.notifications_default==='true',
     min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee),
     ad_reward_gpx:Number(raw.ad_reward_gpx), max_ads_per_day:Number(raw.max_ads_per_day),
     required_ads_before_withdrawal:Number(raw.required_ads_before_withdrawal), required_tasks_before_withdrawal:Number(raw.required_tasks_before_withdrawal),

@@ -51,7 +51,8 @@ router.put('/settings',wrap(async(req,res)=>{const b=req.body||{},cur=await getS
   const required_tasks_before_withdrawal=Math.max(0,Math.floor(num(b.required_tasks_before_withdrawal,cur.required_tasks_before_withdrawal)));
   const withdrawal_cooldown_hours=Math.max(0,num(b.withdrawal_cooldown_hours,cur.withdrawal_cooldown_hours));
   const monetag_zone_id=String(b.monetag_zone_id||cur.monetag_zone_id||'11878092').replace(/[^0-9]/g,'').slice(0,20) || '11878092';
-  const monetag_sdk_src=String(b.monetag_sdk_src||cur.monetag_sdk_src||'').trim().slice(0,1000);if(referral_reward<0||min_withdraw<0||max_withdraw<0||withdrawal_fee<0)throw new HttpError(400,'Enter valid numbers.');if(max_withdraw>0&&max_withdraw<min_withdraw)throw new HttpError(400,'Maximum withdrawal must be 0 or at least minimum.');let milestones=b.referral_milestones; if(typeof milestones==='string'){try{milestones=JSON.parse(milestones)}catch(_){throw new HttpError(400,'Referral milestones JSON is invalid.')}} if(!Array.isArray(milestones)||milestones.length>30||milestones.some(x=>!x||Number(x.referrals)<=0||Number(x.reward)<0))throw new HttpError(400,'Referral milestones are invalid.');milestones=milestones.map(x=>({referrals:Math.floor(Number(x.referrals)),reward:Number(x.reward)})).sort((a,b)=>a.referrals-b.referrals);const welcome_text=String(b.welcome_text||cur.welcome_text).trim().slice(0,1000);if(!welcome_text)throw new HttpError(400,'Welcome message cannot be empty.');const welcome_photo_url=String(b.welcome_photo_url||'').trim().slice(0,1000);const welcome_emoji_ids=String(b.welcome_emoji_ids||'').trim().slice(0,3000);if(welcome_photo_url&&!/^https:\/\/\S+$/i.test(welcome_photo_url))throw new HttpError(400,'Welcome photo URL must start with https://');const auto_payout=b.auto_payout===true||b.auto_payout==='true';const payout_api_url=String(b.payout_api_url||cur.payout_api_url).trim();if(!/^https:\/\/\S+$/i.test(payout_api_url))throw new HttpError(400,'Payout API address must start with https://');const payout_channel_enabled=b.payout_channel_enabled===true||b.payout_channel_enabled==='true';const payout_channel=String(b.payout_channel||cur.payout_channel||'').trim().slice(0,200);if(payout_channel_enabled&&!payout_channel)throw new HttpError(400,'Add a payout channel first.');const payout_token_address=String(b.payout_token_address||'').trim();if(payout_token_address&&!/^0x[a-fA-F0-9]{40}$/.test(payout_token_address))throw new HttpError(400,'Invalid token address.');const newKey=String(b.payout_api_key||'').trim();if(auto_payout&&!(newKey||cur.payout_api_key))throw new HttpError(400,'Add payout API key first.');if(auto_payout&&!payout_token_address)throw new HttpError(400,'Add payout token address first.');await saveSettings({referral_reward,gpx_per_001_usdt,min_conversion_gpx,withdrawals_per_day,referral_milestones:JSON.stringify(milestones),notifications_default:String(b.notifications_default!==false),min_withdraw,max_withdraw,withdrawal_fee,ad_reward_gpx,max_ads_per_day,required_ads_before_withdrawal,required_tasks_before_withdrawal,withdrawal_cooldown_hours,monetag_zone_id,monetag_sdk_src,welcome_text,welcome_photo_url,welcome_emoji_ids,auto_payout:String(auto_payout),payout_api_url,payout_token_address,payout_channel_enabled:String(payout_channel_enabled),payout_channel,...(newKey?{payout_api_key:newKey}:{})});res.json(publicSettings(await getSettings()));}));
+  const referral_reward_message=String(b.referral_reward_message ?? cur.referral_reward_message ?? '').trim().slice(0,3500); if(!referral_reward_message) throw new HttpError(400,'Referral reward message cannot be empty.');
+  const monetag_sdk_src=String(b.monetag_sdk_src||cur.monetag_sdk_src||'').trim().slice(0,1000);if(referral_reward<0||min_withdraw<0||max_withdraw<0||withdrawal_fee<0)throw new HttpError(400,'Enter valid numbers.');if(max_withdraw>0&&max_withdraw<min_withdraw)throw new HttpError(400,'Maximum withdrawal must be 0 or at least minimum.');let milestones=b.referral_milestones; if(typeof milestones==='string'){try{milestones=JSON.parse(milestones)}catch(_){throw new HttpError(400,'Referral milestones JSON is invalid.')}} if(!Array.isArray(milestones)||milestones.length>30||milestones.some(x=>!x||Number(x.referrals)<=0||Number(x.reward)<0))throw new HttpError(400,'Referral milestones are invalid.');milestones=milestones.map(x=>({referrals:Math.floor(Number(x.referrals)),reward:Number(x.reward)})).sort((a,b)=>a.referrals-b.referrals);const welcome_text=String(b.welcome_text||cur.welcome_text).trim().slice(0,1000);if(!welcome_text)throw new HttpError(400,'Welcome message cannot be empty.');const welcome_photo_url=String(b.welcome_photo_url||'').trim().slice(0,1000);const welcome_emoji_ids=String(b.welcome_emoji_ids||'').trim().slice(0,3000);if(welcome_photo_url&&!/^https:\/\/\S+$/i.test(welcome_photo_url))throw new HttpError(400,'Welcome photo URL must start with https://');const auto_payout=b.auto_payout===true||b.auto_payout==='true';const payout_api_url=String(b.payout_api_url||cur.payout_api_url).trim();if(!/^https:\/\/\S+$/i.test(payout_api_url))throw new HttpError(400,'Payout API address must start with https://');const payout_channel_enabled=b.payout_channel_enabled===true||b.payout_channel_enabled==='true';const payout_channel=String(b.payout_channel||cur.payout_channel||'').trim().slice(0,200);if(payout_channel_enabled&&!payout_channel)throw new HttpError(400,'Add a payout channel first.');const payout_token_address=String(b.payout_token_address||'').trim();if(payout_token_address&&!/^0x[a-fA-F0-9]{40}$/.test(payout_token_address))throw new HttpError(400,'Invalid token address.');const newKey=String(b.payout_api_key||'').trim();if(auto_payout&&!(newKey||cur.payout_api_key))throw new HttpError(400,'Add payout API key first.');if(auto_payout&&!payout_token_address)throw new HttpError(400,'Add payout token address first.');await saveSettings({referral_reward,gpx_per_001_usdt,min_conversion_gpx,withdrawals_per_day,referral_milestones:JSON.stringify(milestones),referral_reward_message,notifications_default:String(b.notifications_default!==false),min_withdraw,max_withdraw,withdrawal_fee,ad_reward_gpx,max_ads_per_day,required_ads_before_withdrawal,required_tasks_before_withdrawal,withdrawal_cooldown_hours,monetag_zone_id,monetag_sdk_src,welcome_text,welcome_photo_url,welcome_emoji_ids,auto_payout:String(auto_payout),payout_api_url,payout_token_address,payout_channel_enabled:String(payout_channel_enabled),payout_channel,...(newKey?{payout_api_key:newKey}:{})});res.json(publicSettings(await getSettings()));}));
 
 // Promo codes are managed by admins.
 router.get('/promo-codes',wrap(async(req,res)=>{const {rows}=await pool.query('SELECT * FROM promo_codes ORDER BY created_at DESC');res.json(rows);}));
@@ -65,9 +66,11 @@ async function validateTask(b) {
   const url = String(b.url || '').trim().slice(0, 500);
   const verify_type = b.verify_type === 'auto' ? 'auto' : 'timer';
   const active = b.active !== false;
+  const max_completions = Math.max(0, Math.floor(Number(b.max_completions ?? 0)));
 
   if (!title) throw new HttpError(400, 'Enter a task title.');
   if (!Number.isFinite(reward) || reward < 0 || reward > 1000000) throw new HttpError(400, 'Enter a valid reward.');
+  if (!Number.isFinite(max_completions) || max_completions < 0) throw new HttpError(400, 'Enter a valid completion limit.');
   if (url && !/^https?:\/\//i.test(url)) throw new HttpError(400, 'The link must start with https://');
 
   let chat_id = '';
@@ -94,13 +97,19 @@ async function validateTask(b) {
       throw new HttpError(400, 'Countdown must be between 3 and 86400 seconds.');
     }
   }
-  return { title, description, reward, url, verify_type, chat_id, timer_seconds, active, sort_order: Number.isFinite(Number(b.sort_order)) ? Math.max(0, Math.floor(Number(b.sort_order))) : 0 };
+  return {
+    title, description, reward, url, verify_type, chat_id, timer_seconds, active,
+    sort_order: Number.isFinite(Number(b.sort_order)) ? Math.max(0, Math.floor(Number(b.sort_order))) : 0,
+    max_completions
+  };
 }
 
 router.get('/tasks', wrap(async (req, res) => {
   const { rows } = await pool.query(`
-    SELECT t.*, (SELECT COUNT(*) FROM task_submissions s WHERE s.task_id = t.id AND s.status = 'approved') AS completed
-      FROM tasks t ORDER BY t.id DESC
+    SELECT t.*,
+      (SELECT COUNT(*) FROM task_submissions s WHERE s.task_id = t.id AND s.status = 'approved') AS completed
+    FROM tasks t
+    ORDER BY t.sort_order ASC, t.id ASC
   `);
   res.json(rows);
 }));
@@ -108,38 +117,49 @@ router.get('/tasks', wrap(async (req, res) => {
 router.post('/tasks', wrap(async (req, res) => {
   const t = await validateTask(req.body || {});
   const { rows } = await pool.query(
-    `INSERT INTO tasks (title, description, reward, url, verify_type, chat_id, timer_seconds, active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active]
+    `INSERT INTO tasks (title, description, reward, url, verify_type, chat_id, timer_seconds, active, sort_order, max_completions)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+       COALESCE((SELECT MAX(sort_order) + 1 FROM tasks), 1), $9)
+     RETURNING id`,
+    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.max_completions]
   );
   res.json({ id: rows[0].id });
 }));
 
 router.put('/tasks/:id', wrap(async (req, res) => {
   const t = await validateTask(req.body || {});
+  const id = parseInt(req.params.id, 10);
+  if (!id) throw new HttpError(404, 'Task not found.');
   const r = await pool.query(
-    `UPDATE tasks SET title=$1, description=$2, reward=$3, url=$4, verify_type=$5, chat_id=$6, timer_seconds=$7, active=$8, sort_order=$9 WHERE id=$10`,
-    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.sort_order, parseInt(req.params.id, 10)]
+    `UPDATE tasks
+        SET title=$1, description=$2, reward=$3, url=$4, verify_type=$5, chat_id=$6,
+            timer_seconds=$7, active=$8, sort_order=$9, max_completions=$10
+      WHERE id=$11`,
+    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.sort_order, t.max_completions, id]
   );
   if (!r.rowCount) throw new HttpError(404, 'Task not found.');
   res.json({ ok: true });
 }));
 
 router.post('/tasks/reorder', wrap(async (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => parseInt(id, 10)).filter(Boolean) : [];
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map((id) => parseInt(id, 10)).filter(Boolean)
+    : [];
   if (!ids.length) throw new HttpError(400, 'No task order was provided.');
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const existing = await client.query('SELECT id FROM tasks ORDER BY sort_order, id');
+    const existing = await client.query('SELECT id FROM tasks ORDER BY sort_order ASC, id ASC');
     const existingIds = existing.rows.map(r => Number(r.id));
     const unique = [...new Set(ids)];
     const ordered = unique.concat(existingIds.filter(id => !unique.includes(id)));
+
     for (let i = 0; i < ordered.length; i++) {
       await client.query('UPDATE tasks SET sort_order=$1 WHERE id=$2', [i + 1, ordered[i]]);
     }
     await client.query('COMMIT');
-    res.json({ ok: true });
+    res.json({ ok: true, order: ordered });
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

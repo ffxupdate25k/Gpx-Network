@@ -82,7 +82,7 @@ router.post('/notifications',wrap(async(req,res)=>{res.json({enabled:await svc.s
 // user is currently waiting on, remaining_seconds tells the client how much longer to count.
 router.get('/tasks', wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT t.id, t.title, t.description, t.reward, t.url, t.verify_type, t.timer_seconds,
+    `SELECT t.id, t.title, t.description, t.reward, t.url, t.verify_type, t.timer_seconds, t.max_completions,
             COALESCE(s.status, 'todo') AS raw_status,
             GREATEST(0, t.timer_seconds - EXTRACT(EPOCH FROM (now() - s.created_at)))::int AS remaining_seconds
        FROM tasks t
@@ -96,7 +96,7 @@ router.get('/tasks', wrap(async (req, res) => {
   );
   res.json(rows.map((r) => ({
     id: r.id, title: r.title, description: r.description, reward: r.reward, url: r.url,
-    verify_type: r.verify_type, timer_seconds: r.timer_seconds,
+    verify_type: r.verify_type, timer_seconds: r.timer_seconds, max_completions: Number(r.max_completions || 0),
     status: r.raw_status === 'approved' ? 'done' : r.raw_status === 'pending' ? 'pending' : 'todo',
     remaining_seconds: r.raw_status === 'pending' ? r.remaining_seconds : null
   })));

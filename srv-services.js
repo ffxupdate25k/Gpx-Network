@@ -18,6 +18,24 @@ function displayName(u) {
   return full || (u.username ? '@' + u.username : 'User ' + u.id);
 }
 
+function renderReferralMessage(template, data) {
+  const values = {
+    name: data.name || 'User',
+    username: data.username || 'No username',
+    first_name: data.first_name || '',
+    last_name: data.last_name || '',
+    user_id: String(data.user_id ?? ''),
+    reward: Number(data.reward || 0).toLocaleString(),
+    referrals: Number(data.referrals || 0).toLocaleString(),
+    level: String(data.level ?? 0),
+    date: data.date || new Date().toLocaleString(),
+    milestone: data.milestone || 'Keep inviting friends to unlock more rewards.'
+  };
+  return String(template || '').replace(/\{\{?\s*([a-z_]+)\s*\}?\}/gi, (all, key) =>
+    Object.prototype.hasOwnProperty.call(values, key.toLowerCase()) ? values[key.toLowerCase()] : all
+  );
+}
+
 // ---------- Messaging ----------
 // Operational events stay inside the Mini App. The bot does not send automatic
 // referral, task, withdrawal or payout notifications. Admin broadcasts are separate
@@ -92,7 +110,8 @@ async function completeReferral(userId) {
       const referrerId = rows[0].referrer_id;
       const reward = (await getSettings(c)).referral_reward;
       const u = await c.query('SELECT id, first_name, last_name, username FROM users WHERE id = $1', [userId]);
-      const name = displayName(u.rows[0]);
+      const referredUser = u.rows[0];
+      const name = displayName(referredUser);
       await c.query(
         `UPDATE referrals SET status = 'completed', reward = $2, completed_at = now() WHERE referred_id = $1`,
         [userId, reward]
@@ -104,16 +123,37 @@ async function completeReferral(userId) {
       const cntQ=await c.query(`SELECT COUNT(*) AS n FROM referrals WHERE referrer_id=$1 AND status='completed'`,[referrerId]);
       const count=Number(cntQ.rows[0].n); const milestones=(await getSettings(c)).referral_milestones||[]; const awarded=[];
       for(const m of milestones){ const mr=Number(m.referrals), rw=Number(m.reward||0); if(mr>0&&count>=mr){ const ins=await c.query(`INSERT INTO referral_milestone_claims(user_id,milestone_referrals,reward) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[referrerId,mr,rw]); if(ins.rowCount&&rw>0){await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[rw,referrerId]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'milestone',$3)`,[referrerId,rw,`Referral milestone: ${mr} referrals`]);awarded.push({referrals:mr,reward:rw});}} }
-      return { referrerId, reward, name, count, awarded };
+      return {
+        referrerId, reward, name,
+        username: referredUser.username ? '@' + referredUser.username : 'No username',
+        first_name: referredUser.first_name || '',
+        last_name: referredUser.last_name || '',
+        referredUserId: userId,
+        count, awarded
+      };
     });
   } catch (e) {
     console.error('Referral completion failed:', e.message);
     return;
   }
   if (done) {
-    const line = done.reward > 0 ? `\nYou earned ${done.reward.toLocaleString()} GPX.` : '';
-    const ms = done.awarded && done.awarded.length ? '\n🏆 Milestone unlocked: ' + done.awarded.map(x=>`${x.referrals} referrals (+${x.reward} GPX)`).join(', ') : '';
-    notifyUser(done.referrerId, `🎉 ${done.name} joined through your referral!${line}${ms}`);
+    const settings = await getSettings();
+    const milestone = done.awarded && done.awarded.length
+      ? '🏆 Milestone unlocked: ' + done.awarded.map(x => `${x.referrals} referrals (+${x.reward} GPX)`).join(', ')
+      : '';
+    const message = renderReferralMessage(settings.referral_reward_message, {
+      name: done.name,
+      username: done.username,
+      first_name: done.first_name,
+      last_name: done.last_name,
+      user_id: done.referredUserId,
+      reward: done.reward,
+      referrals: done.count,
+      level: Math.floor(done.count / 100),
+      date: new Date().toLocaleString(),
+      milestone
+    });
+    notifyUser(done.referrerId, message);
   }
 }
 
@@ -160,45 +200,109 @@ async function checkGate(userId, { force = false } = {}) {
 }
 
 // ---------- Tasks ----------
-async function completeAutoTask(task, userId) {
-  return tx(async (c) => {
+async function lockTaskForCompletion(c, taskId) {
+  const q = await c.query('SELECT * FROM tasks WHERE id=$1 AND active FOR UPDATE', [taskId]);
+  if (!q.rowCount) throw new HttpError(404, 'Task is no longer available.');
+  const current = q.rows[0];
+  const completedQ = await c.query(
+    `SELECT COUNT(*) AS n FROM task_submissions WHERE task_id=$1 AND status='approved'`,
+    [taskId]
+  );
+  const completed = Number(completedQ.rows[0].n || 0);
+  if (Number(current.max_completions || 0) > 0 && completed >= Number(current.max_completions)) {
+    await c.query('DELETE FROM tasks WHERE id=$1', [taskId]);
+    throw new HttpError(404, 'This task has reached its completion limit.');
+  }
+  return { task: current, completed };
+}
+
+async function finishTaskReward(c, task, userId, submissionId) {
+  if (submissionId) {
+    await c.query(
+      `UPDATE task_submissions SET status='approved', reviewed_at=now() WHERE id=$1`,
+      [submissionId]
+    );
+  } else {
     try {
       await c.query(
-        `INSERT INTO task_submissions (task_id, user_id, status, reviewed_at) VALUES ($1, $2, 'approved', now())`,
+        `INSERT INTO task_submissions (task_id, user_id, status, reviewed_at)
+         VALUES ($1, $2, 'approved', now())`,
         [task.id, userId]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'You already completed this task.');
       throw e;
     }
-    const r = await c.query('UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance', [task.reward, userId]);
-    await c.query(
-      `INSERT INTO transactions (user_id, amount, type, title) VALUES ($1, $2, 'task', $3)`,
-      [userId, task.reward, 'Task: ' + task.title]
-    );
-    return r.rows[0].balance;
+  }
+
+  const r = await c.query(
+    'UPDATE users SET balance=balance+$1 WHERE id=$2 RETURNING balance',
+    [task.reward, userId]
+  );
+  await c.query(
+    `INSERT INTO transactions (user_id, amount, type, title)
+     VALUES ($1, $2, 'task', $3)`,
+    [userId, task.reward, 'Task: ' + task.title]
+  );
+
+  const countQ = await c.query(
+    `SELECT COUNT(*) AS n FROM task_submissions WHERE task_id=$1 AND status='approved'`,
+    [task.id]
+  );
+  const completed = Number(countQ.rows[0].n || 0);
+  const limit = Number(task.max_completions || 0);
+
+  if (limit > 0 && completed >= limit) {
+    await c.query('DELETE FROM tasks WHERE id=$1', [task.id]);
+  }
+
+  return r.rows[0].balance;
+}
+
+async function completeAutoTask(task, userId) {
+  return tx(async (c) => {
+    const locked = await lockTaskForCompletion(c, task.id);
+    return finishTaskReward(c, locked.task, userId, null);
   });
 }
 
-// Timer tasks: starting records when the countdown began; completing pays out once
-// enough real time has passed on the server (never trusting the client's own clock alone).
+// Timer tasks: starting records when the countdown began; completion checks the server clock.
 async function startTimerTask(task, userId) {
   const existing = await pool.query(
-    `SELECT created_at FROM task_submissions WHERE task_id = $1 AND user_id = $2 AND status IN ('pending','approved')`,
+    `SELECT created_at FROM task_submissions
+      WHERE task_id=$1 AND user_id=$2 AND status IN ('pending','approved')`,
     [task.id, userId]
   );
-  if (existing.rowCount) return existing.rows[0].created_at; // already started (or done) — resume, don't restart the clock
+  if (existing.rowCount) return existing.rows[0].created_at;
+
+  // Check the limit before creating a pending progress record.
+  const limitQ = await pool.query(
+    `SELECT t.max_completions,
+            (SELECT COUNT(*) FROM task_submissions s WHERE s.task_id=t.id AND s.status='approved') AS completed
+       FROM tasks t WHERE t.id=$1 AND t.active`,
+    [task.id]
+  );
+  if (!limitQ.rowCount) throw new HttpError(404, 'Task is no longer available.');
+  const limit = Number(limitQ.rows[0].max_completions || 0);
+  const completed = Number(limitQ.rows[0].completed || 0);
+  if (limit > 0 && completed >= limit) {
+    await pool.query('DELETE FROM tasks WHERE id=$1', [task.id]);
+    throw new HttpError(404, 'This task has reached its completion limit.');
+  }
+
   try {
     const r = await pool.query(
-      `INSERT INTO task_submissions (task_id, user_id, status) VALUES ($1, $2, 'pending') RETURNING created_at`,
-      [task.id, userId]
+      `INSERT INTO task_submissions (task_id,user_id,status)
+       VALUES ($1,$2,'pending') RETURNING created_at`,
+      [task.id,userId]
     );
     return r.rows[0].created_at;
   } catch (e) {
     if (e.code === '23505') {
       const again = await pool.query(
-        `SELECT created_at FROM task_submissions WHERE task_id = $1 AND user_id = $2 AND status IN ('pending','approved')`,
-        [task.id, userId]
+        `SELECT created_at FROM task_submissions
+          WHERE task_id=$1 AND user_id=$2 AND status IN ('pending','approved')`,
+        [task.id,userId]
       );
       if (again.rowCount) return again.rows[0].created_at;
     }
@@ -208,23 +312,23 @@ async function startTimerTask(task, userId) {
 
 async function completeTimerTask(task, userId) {
   return tx(async (c) => {
+    const locked = await lockTaskForCompletion(c, task.id);
+    const currentTask = locked.task;
+
     const { rows } = await c.query(
       `SELECT id, created_at FROM task_submissions
-        WHERE task_id = $1 AND user_id = $2 AND status = 'pending' FOR UPDATE`,
-      [task.id, userId]
+        WHERE task_id=$1 AND user_id=$2 AND status='pending'
+        FOR UPDATE`,
+      [task.id,userId]
     );
     if (!rows.length) throw new HttpError(400, 'Open the task first, then wait for the countdown.');
+
     const waitedSec = (Date.now() - new Date(rows[0].created_at).getTime()) / 1000;
-    if (waitedSec + 1 < task.timer_seconds) { // 1s grace for clock/network drift
-      throw new HttpError(400, `Please wait ${Math.ceil(task.timer_seconds - waitedSec)} more second(s).`);
+    if (waitedSec + 1 < Number(currentTask.timer_seconds)) {
+      throw new HttpError(400, `Please wait ${Math.ceil(Number(currentTask.timer_seconds) - waitedSec)} more second(s).`);
     }
-    await c.query(`UPDATE task_submissions SET status = 'approved', reviewed_at = now() WHERE id = $1`, [rows[0].id]);
-    const r = await c.query('UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance', [task.reward, userId]);
-    await c.query(
-      `INSERT INTO transactions (user_id, amount, type, title) VALUES ($1, $2, 'task', $3)`,
-      [userId, task.reward, 'Task: ' + task.title]
-    );
-    return r.rows[0].balance;
+
+    return finishTaskReward(c, currentTask, userId, rows[0].id);
   });
 }
 

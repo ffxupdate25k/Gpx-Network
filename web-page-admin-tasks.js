@@ -1,5 +1,5 @@
-// Create tasks. Each task is either auto-verified (bot checks channel/group membership) or
-// timer-verified (a countdown runs after the user opens the link, then the reward is paid).
+// Admin task manager. Tasks are reordered with explicit Move Up / Move Down buttons.
+// Each move is saved immediately so the order users see is the order shown here.
 import { api } from "./web-api.js";
 import { confirmBox, haptic } from "./web-telegram.js";
 import { esc, fail } from "./web-utils.js";
@@ -9,60 +9,63 @@ export default {
     async function showList() {
       el.innerHTML = `<div class="loading">Loading…</div>`;
       const list = await api.admin.tasks();
+
       el.innerHTML = `
         <button class="btn" id="new">New task</button>
-        <p class="hint task-order-hint">Drag a task by the handle to move it anywhere, or edit its order number. The order users see is saved automatically when you tap Save Order.</p>
+        <p class="hint task-order-hint">
+          Use <b>Move Up</b> or <b>Move Down</b>. Each tap saves the new order immediately.
+        </p>
         <div id="task-order-list">
-        ${list.length ? list.map((t, i) => `
-          <div class="card admin-task-row" draggable="true" data-id="${t.id}">
-            <div class="task-drag" title="Drag to reorder">☷</div>
-            <div class="task-order-num"><label>Order</label><input class="order-input" type="number" min="1" value="${i+1}" data-id="${t.id}"></div>
+        ${list.length ? list.map((t, i) => {
+          const max = Number(t.max_completions || 0);
+          const completed = Number(t.completed || 0);
+          const limitText = max === 0 ? "Unlimited users" : `${completed}/${max} users completed`;
+          return `
+          <div class="card admin-task-row" data-id="${t.id}">
+            <div class="task-position">${i + 1}</div>
             <div class="task-order-main">
               <div class="head" style="display:flex;justify-content:space-between;gap:8px">
                 <b>${esc(t.title)}</b>
-                <span class="reward" style="color:var(--ok);font-weight:800">+${Number(t.reward).toLocaleString()+" GPX"}</span>
+                <span class="reward" style="color:var(--ok);font-weight:800">+${Number(t.reward).toLocaleString()} GPX</span>
               </div>
-              <div class="hint">${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"} · ${t.completed} completed</div>
+              <div class="hint">
+                ${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"}
+                · ${limitText}
+              </div>
               <div class="acts">
                 <span class="badge ${t.active ? "b-ok" : "b-pend"}">${t.active ? "Active" : "Paused"}</span>
+                <button class="btn sm ghost" data-move="up" data-index="${i}" ${i === 0 ? "disabled" : ""}>↑ Move Up</button>
+                <button class="btn sm ghost" data-move="down" data-index="${i}" ${i === list.length - 1 ? "disabled" : ""}>↓ Move Down</button>
                 <button class="btn sm ghost" data-act="edit" data-id="${t.id}">Edit</button>
                 <button class="btn sm ghost" data-act="toggle" data-id="${t.id}">${t.active ? "Pause" : "Resume"}</button>
                 <button class="btn sm danger" data-act="delete" data-id="${t.id}">Delete</button>
               </div>
             </div>
-          </div>`).join("") : `<div class="card empty">No tasks yet.<br>Create your first task.</div>`}
-        </div>
-        ${list.length ? `<button class="btn" id="save-order">Save Order</button>` : ""}`;
+          </div>`;
+        }).join("") : `<div class="card empty">No tasks yet.<br>Create your first task.</div>`}
+        </div>`;
 
       el.querySelector("#new").onclick = () => showForm(null);
 
-      const container = el.querySelector("#task-order-list");
-      let dragged = null;
-      container?.querySelectorAll(".admin-task-row").forEach(row => {
-        row.addEventListener("dragstart", () => { dragged = row; row.classList.add("dragging"); });
-        row.addEventListener("dragend", () => { dragged = null; row.classList.remove("dragging"); [...container.querySelectorAll(".admin-task-row")].forEach((r,i)=>{ const input=r.querySelector(".order-input"); if(input) input.value=i+1; }); });
-        row.addEventListener("dragover", e => {
-          e.preventDefault();
-          if (!dragged || dragged === row) return;
-          const rect = row.getBoundingClientRect();
-          const after = e.clientY > rect.top + rect.height / 2;
-          container.insertBefore(dragged, after ? row.nextSibling : row);
-        });
-      });
+      el.querySelectorAll("[data-move]").forEach((b) => {
+        b.onclick = async () => {
+          const from = Number(b.dataset.index);
+          const to = b.dataset.move === "up" ? from - 1 : from + 1;
+          if (to < 0 || to >= list.length) return;
 
-      el.querySelector("#save-order")?.addEventListener("click", async () => {
-        const rows = [...container.querySelectorAll(".admin-task-row")];
-        const byPosition = new Map();
-        rows.forEach((row, index) => {
-          const input = row.querySelector(".order-input");
-          byPosition.set(row.dataset.id, Math.max(1, Number(input.value) || index + 1));
-        });
-        const sorted = rows.slice().sort((a,b) => byPosition.get(a.dataset.id)-byPosition.get(b.dataset.id));
-        const ids = sorted.map(r => Number(r.dataset.id));
-        const save = el.querySelector("#save-order");
-        save.disabled = true;
-        try { await api.admin.reorderTasks(ids); haptic("success"); await showList(); }
-        catch (err) { save.disabled = false; fail(err); }
+          const ids = list.map((t) => Number(t.id));
+          [ids[from], ids[to]] = [ids[to], ids[from]];
+
+          el.querySelectorAll("[data-move]").forEach((x) => x.disabled = true);
+          try {
+            await api.admin.reorderTasks(ids);
+            haptic("success");
+            await showList();
+          } catch (err) {
+            fail(err);
+            await showList();
+          }
+        };
       });
 
       el.querySelectorAll("[data-act]").forEach((b) => {
@@ -71,7 +74,11 @@ export default {
           try {
             if (b.dataset.act === "edit") return showForm(t);
             if (b.dataset.act === "toggle") {
-              await api.admin.updateTask(t.id, { ...t, active: !t.active });
+              await api.admin.updateTask(t.id, {
+                ...t,
+                max_completions: Number(t.max_completions || 0),
+                active: !t.active
+              });
               return showList();
             }
             if (b.dataset.act === "delete") {
@@ -85,26 +92,40 @@ export default {
     }
 
     function showForm(t) {
-      const v = t || { title: "", description: "", reward: "", url: "", verify_type: "timer", chat_id: "", timer_seconds: 10, active: true, sort_order: 0 };
+      const v = t || {
+        title: "", description: "", reward: "", url: "",
+        verify_type: "timer", chat_id: "", timer_seconds: 10,
+        active: true, sort_order: 0, max_completions: 0
+      };
+
       el.innerHTML = `
         <div class="card">
           <b>${t ? "Edit task" : "New task"}</b>
           <label for="f-title">Title</label>
           <input id="f-title" maxlength="120" value="${esc(v.title)}">
+
           <label for="f-desc">Description (optional)</label>
           <textarea id="f-desc" maxlength="500" style="min-height:70px">${esc(v.description)}</textarea>
+
           <label for="f-reward">Reward (GPX)</label>
           <input id="f-reward" type="number" inputmode="decimal" step="any" value="${esc(v.reward)}">
+
+          <label for="f-limit">Maximum users who can complete this task</label>
+          <input id="f-limit" type="number" inputmode="numeric" min="0" step="1" value="${esc(v.max_completions ?? 0)}">
+          <p class="hint"><b>0 = unlimited.</b> When the limit is reached, the task is automatically removed.</p>
+
           <label for="f-type">How is it verified?</label>
           <select id="f-type">
             <option value="timer">Timer: user opens a link, then waits out a countdown</option>
             <option value="auto">Auto: bot checks channel/group membership</option>
           </select>
+
           <div id="auto-box">
             <label for="f-chat">Channel or group to check</label>
             <input id="f-chat" placeholder="@yourchannel" value="${esc(v.chat_id)}">
             <p class="hint">The bot must be an admin there, otherwise it can't check membership.</p>
           </div>
+
           <div id="timer-box">
             <label for="f-url">Link users open</label>
             <input id="f-url" type="url" placeholder="https://t.me/yourchannel" value="${esc(v.url)}">
@@ -112,6 +133,7 @@ export default {
             <input id="f-secs" type="number" inputmode="numeric" min="3" max="86400" value="${esc(v.timer_seconds || 10)}">
             <p class="hint">The reward is credited automatically once this many seconds pass after the user taps Start.</p>
           </div>
+
           <label class="check"><input type="checkbox" id="f-active" ${v.active ? "checked" : ""}> Task is active</label>
           <div class="gap" style="height:16px"></div>
           <button class="btn" id="save">Save task</button>
@@ -123,6 +145,7 @@ export default {
       const autoBox = el.querySelector("#auto-box");
       const timerBox = el.querySelector("#timer-box");
       type.value = v.verify_type;
+
       const sync = () => {
         autoBox.hidden = type.value !== "auto";
         timerBox.hidden = type.value !== "timer";
@@ -131,12 +154,15 @@ export default {
       sync();
 
       el.querySelector("#cancel").onclick = showList;
+
       const save = el.querySelector("#save");
       save.onclick = async () => {
+        const max = Math.max(0, Math.floor(Number(el.querySelector("#f-limit").value || 0)));
         const body = {
           title: el.querySelector("#f-title").value,
           description: el.querySelector("#f-desc").value,
           reward: el.querySelector("#f-reward").value,
+          max_completions: max,
           url: el.querySelector("#f-url").value,
           verify_type: type.value,
           chat_id: el.querySelector("#f-chat").value,
@@ -144,11 +170,13 @@ export default {
           active: el.querySelector("#f-active").checked,
           sort_order: Number(v.sort_order || 0)
         };
+
         save.disabled = true;
         try {
-          if (t) await api.admin.updateTask(t.id, body); else await api.admin.createTask(body);
+          if (t) await api.admin.updateTask(t.id, body);
+          else await api.admin.createTask(body);
           haptic("success");
-          showList();
+          await showList();
         } catch (err) {
           save.disabled = false;
           fail(err);
