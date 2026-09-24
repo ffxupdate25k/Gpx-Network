@@ -17,7 +17,10 @@ export const api={
  convert:(amount)=>post("/api/convert",{amount}),
  requestWithdrawal:(payload)=>post("/api/withdrawals",payload), saveWallet:(address)=>post("/api/wallet",{address}), getWithdrawalStatus:(id)=>http(`/api/withdrawals/${id}/status`),
  generateGpxWallet:()=>post("/api/gpx-wallet/generate"), revokeGpxWallet:()=>post("/api/gpx-wallet/revoke"),
- transferGpx:(address,amount)=>post("/api/onchain/transfer",{address,amount}),
+ transferRecipient:(address)=>http(`/api/onchain/recipient?address=${encodeURIComponent(address)}`),
+ getSecurity:()=>http('/api/security'), setPin:(pin,current_pin)=>post('/api/security/pin',{pin,current_pin}), verifyPin:(pin)=>post('/api/security/verify-pin',{pin}),
+ registerBiometric:(token,pin)=>post('/api/security/biometric/register',{token,pin}), verifyBiometric:(token)=>post('/api/security/biometric/verify',{token}),
+ transferGpx:(address,amount,security)=>post("/api/onchain/transfer",{address,amount,security}),
  setNotifications:(enabled)=>post("/api/notifications",{enabled}),
  admin:{
   overview:()=>http("/api/admin/overview"), getSettings:()=>http("/api/admin/settings"), saveSettings:(s)=>http("/api/admin/settings","PUT",s),

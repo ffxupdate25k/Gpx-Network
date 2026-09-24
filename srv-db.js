@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
   notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   gpx_wallet_address TEXT,
   gpx_wallet_revoked_at TIMESTAMPTZ,
+  transaction_pin_hash TEXT,
+  transaction_pin_salt TEXT,
+  biometric_token_hash TEXT,
   referred_by   BIGINT,
   bot_blocked   BOOLEAN NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -129,7 +132,9 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   transaction_id INT REFERENCES transactions(id),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   processed_at   TIMESTAMPTZ,
-  processed_by   BIGINT
+  processed_by   BIGINT,
+  fee            NUMERIC(18,6) NOT NULL DEFAULT 0,
+  payout_amount  NUMERIC(18,6)
 );
 
 CREATE TABLE IF NOT EXISTS broadcasts (
@@ -168,6 +173,9 @@ CREATE TABLE IF NOT EXISTS admin_users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gpx_wallet_address TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS gpx_wallet_revoked_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS transaction_pin_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS transaction_pin_salt TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS biometric_token_hash TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS users_gpx_wallet_uniq ON users(lower(gpx_wallet_address)) WHERE gpx_wallet_address IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_uniq ON users (lower(wallet_address)) WHERE wallet_address IS NOT NULL;
 
@@ -178,6 +186,9 @@ ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS payout_state TEXT NOT NULL DEFA
 ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS tx_hash TEXT;
 ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS payout_response TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS fee NUMERIC(18,6) NOT NULL DEFAULT 0;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS payout_amount NUMERIC(18,6);
+UPDATE withdrawals SET payout_amount = amount - fee WHERE payout_amount IS NULL;
 
 -- Rich broadcasts: optional photo and inline buttons.
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS photo_url TEXT NOT NULL DEFAULT '';
@@ -201,6 +212,7 @@ const DEFAULTS = {
   notifications_default: 'true',
   min_withdraw: '0.10',
   max_withdraw: '0',
+  withdrawal_fee: '0.10',
   welcome_text: 'Welcome to GPX Network! Tap the button below to open the app and start earning GPX.',
   welcome_photo_url: '',
   welcome_emoji_ids: '',
@@ -226,7 +238,7 @@ async function getSettings(q = pool) {
   return {
     referral_reward:Number(raw.referral_reward), gpx_per_001_usdt:Number(raw.gpx_per_001_usdt), min_conversion_gpx:Number(raw.min_conversion_gpx),
     withdrawals_per_day:Number(raw.withdrawals_per_day), referral_milestones, notifications_default:raw.notifications_default==='true',
-    min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), welcome_text:raw.welcome_text,
+    min_withdraw:Number(raw.min_withdraw), max_withdraw:Number(raw.max_withdraw), withdrawal_fee:Number(raw.withdrawal_fee), welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
     payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address
   };

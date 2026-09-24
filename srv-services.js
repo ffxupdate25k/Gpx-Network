@@ -77,8 +77,6 @@ async function createPendingReferral(user, referrerId) {
     console.error('Could not save referral:', e.message);
     return;
   }
-  const earn = reward > 0 ? ` You'll earn ${money(reward)} once they open the app and join the required channels.` : '';
-  notifyUser(referrerId, `👋 ${displayName(user)} joined using your GPX Network referral link.${earn}`);
 }
 
 // Pays the referrer. Called when the referred user passes the channel gate. Safe to call many times.
@@ -237,15 +235,27 @@ const autoPayoutReady = (s) =>
   !!(s.auto_payout && s.payout_api_key && s.payout_token_address && s.payout_api_url);
 
 async function createWithdrawal(user, amountIn) {
-  const s=await getSettings(); const address=user.wallet_address; if(!address) throw new HttpError(400,'Connect your USDT BEP20 payout wallet first.');
-  const amount=Math.round(Number(amountIn)*1000000)/1000000; if(!(amount>0)) throw new HttpError(400,'Enter a valid USDT amount.');
-  if(amount<s.min_withdraw) throw new HttpError(400,`Minimum withdrawal is ${s.min_withdraw.toFixed(2)} USDT.`);
-  if(s.max_withdraw>0&&amount>s.max_withdraw) throw new HttpError(400,`Maximum withdrawal is ${s.max_withdraw.toFixed(2)} USDT.`);
-  const countQ=await pool.query(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id=$1 AND created_at>=date_trunc('day',now())`,[user.id]);
-  if(Number(countQ.rows[0].n)>=s.withdrawals_per_day) throw new HttpError(400,`You can make only ${s.withdrawals_per_day} withdrawals per day.`);
-  const auto=false; const result=await tx(async(c)=>{ const r=await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance',[amount,user.id]); if(!r.rowCount)throw new HttpError(400,'Amount is higher than your USDT balance.'); const t=await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal','USDT Withdrawal','pending') RETURNING id`,[user.id,-amount]); const w=await c.query(`INSERT INTO withdrawals(user_id,amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5) RETURNING id`,[user.id,amount,address,t.rows[0].id,auto?'sending':'manual']); return {id:w.rows[0].id,balance:r.rows[0].usdt_balance}; });
-  notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT from ${displayName(user)} (ID ${user.id}). Open Admin Panel > Withdrawals to approve or reject it.`);
-  return {...result,auto};
+  const s = await getSettings();
+  const address = user.wallet_address;
+  if (!address) throw new HttpError(400, 'Connect your USDT BEP20 payout wallet first.');
+  const amount = Math.round(Number(amountIn) * 1000000) / 1000000;
+  if (!(amount > 0)) throw new HttpError(400, 'Enter a valid USDT amount.');
+  if (amount < s.min_withdraw) throw new HttpError(400, `Minimum withdrawal is ${s.min_withdraw.toFixed(2)} USDT.`);
+  if (s.max_withdraw > 0 && amount > s.max_withdraw) throw new HttpError(400, `Maximum withdrawal is ${s.max_withdraw.toFixed(2)} USDT.`);
+  const fee = Math.round(Number(s.withdrawal_fee || 0) * 1000000) / 1000000;
+  if (fee >= amount) throw new HttpError(400, `Withdrawal fee is ${fee.toFixed(2)} USDT. Enter an amount higher than the fee.`);
+  const payoutAmount = Math.round((amount - fee) * 1000000) / 1000000;
+  const countQ = await pool.query(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id=$1 AND created_at>=date_trunc('day',now())`, [user.id]);
+  if (Number(countQ.rows[0].n) >= s.withdrawals_per_day) throw new HttpError(400, `You can make only ${s.withdrawals_per_day} withdrawals per day.`);
+  const result = await tx(async (c) => {
+    const r = await c.query('UPDATE users SET usdt_balance=usdt_balance-$1 WHERE id=$2 AND usdt_balance>=$1 RETURNING usdt_balance', [amount, user.id]);
+    if (!r.rowCount) throw new HttpError(400, 'Amount is higher than your USDT balance.');
+    const t = await c.query(`INSERT INTO transactions(user_id,amount,type,title,status) VALUES($1,$2,'withdrawal',$3,'pending') RETURNING id`, [user.id, -amount, `USDT Withdrawal (fee $${fee.toFixed(2)})`]);
+    const w = await c.query(`INSERT INTO withdrawals(user_id,amount,fee,payout_amount,address,transaction_id,payout_state) VALUES($1,$2,$3,$4,$5,$6,'manual') RETURNING id`, [user.id, amount, fee, payoutAmount, address, t.rows[0].id]);
+    return { id: w.rows[0].id, balance: r.rows[0].usdt_balance, fee, payout_amount: payoutAmount };
+  });
+  notifyAdmins(`💸 New GPX Network withdrawal: ${amount.toFixed(2)} USDT (fee ${fee.toFixed(2)}, send ${payoutAmount.toFixed(2)} USDT) from ${displayName(user)} (ID ${user.id}). Open Admin Panel > Withdrawals to approve or reject it.`);
+  return { ...result, auto: false };
 }
 
 // Turns the payout service's reply into one of: success, failed (refund), config (admin must fix), uncertain (admin must check).
@@ -286,7 +296,7 @@ async function callPayoutApi(s, w) {
         api_key: s.payout_api_key,
         to_address: w.address,
         token_address: s.payout_token_address,
-        amount: Number(w.amount)
+        amount: Number(w.payout_amount ?? w.amount)
       }),
       signal: AbortSignal.timeout(90000)
     });
@@ -298,23 +308,11 @@ async function callPayoutApi(s, w) {
   return classifyPayout(res.status, text);
 }
 
-async function refundWithdrawal(c, row, note, adminId = null) {
-  await c.query(
-    `UPDATE withdrawals SET status = 'rejected', payout_state = 'done', note = $2, processed_at = now(), processed_by = $3 WHERE id = $1`,
-    [row.id, note || null, adminId]
-  );
-  await c.query(`UPDATE transactions SET status = 'rejected' WHERE id = $1`, [row.transaction_id]);
-  await c.query('UPDATE users SET usdt_balance = usdt_balance + $1 WHERE id = $2', [row.amount, row.user_id]);
-  await c.query(
-    `INSERT INTO transactions (user_id, amount, type, title) VALUES ($1, $2, 'refund', 'Withdrawal refunded')`,
-    [row.user_id, row.amount]
-  );
-}
 
 async function runPayout(id) {
   const s = await getSettings();
   const found = await pool.query(
-    `SELECT id, user_id, amount, address, transaction_id FROM withdrawals
+    `SELECT id, user_id, amount, fee, payout_amount, address, transaction_id FROM withdrawals
       WHERE id = $1 AND status = 'pending' AND payout_state = 'sending'`,
     [id]
   );
@@ -547,7 +545,7 @@ async function ensureGpxWallet(userId){
 async function generateGpxWallet(userId){const addr=newWalletAddress();try{const r=await pool.query('UPDATE users SET gpx_wallet_address=$1,gpx_wallet_revoked_at=NULL WHERE id=$2 RETURNING gpx_wallet_address',[addr,userId]);if(!r.rowCount)throw new HttpError(404,'User not found.');return r.rows[0].gpx_wallet_address;}catch(e){if(e.code==='23505')return generateGpxWallet(userId);throw e;}}
 async function revokeGpxWallet(userId){const r=await pool.query('UPDATE users SET gpx_wallet_address=NULL,gpx_wallet_revoked_at=now() WHERE id=$1 RETURNING id',[userId]);if(!r.rowCount)throw new HttpError(404,'User not found.');return true;}
 async function convertGpx(userId, amount){const s=await getSettings(); const n=Math.floor(Number(amount)); if(!Number.isFinite(n)||n<s.min_conversion_gpx)throw new HttpError(400,`Minimum conversion is ${s.min_conversion_gpx.toLocaleString()} GPX.`); if(n%s.gpx_per_001_usdt!==0)throw new HttpError(400,`Amount must be in ${s.gpx_per_001_usdt.toLocaleString()} GPX increments.`); const usdt=n/s.gpx_per_001_usdt*0.01; return tx(async(c)=>{const r=await c.query('UPDATE users SET balance=balance-$1,usdt_balance=usdt_balance+$2 WHERE id=$3 AND balance>=$1 RETURNING balance,usdt_balance',[n,usdt,userId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'conversion',$3)`,[userId,-n,`Converted ${n} GPX to ${usdt.toFixed(2)} USDT`]);return{gpx:n,usdt,balance:r.rows[0].balance,usdt_balance:r.rows[0].usdt_balance};});}
-async function transferGpx(fromId,address,amount){const n=Math.floor(Number(amount));if(!Number.isFinite(n)||n<=0)throw new HttpError(400,'Enter a valid GPX amount.');const result=await tx(async(c)=>{const me=await c.query('SELECT id,balance,gpx_wallet_address FROM users WHERE id=$1 FOR UPDATE',[fromId]);if(!me.rowCount)throw new HttpError(404,'User not found.');const levelRow=await c.query(`SELECT level_override,(SELECT COUNT(*) FROM referrals WHERE referrer_id=$1 AND status='completed') AS referrals FROM users WHERE id=$1`,[fromId]); const level=levelRow.rows[0].level_override==null?Math.floor(Number(levelRow.rows[0].referrals)/100):Number(levelRow.rows[0].level_override);if(level<10)throw new HttpError(403,'You must reach Level 10 to transfer GPX.');const to=await c.query('SELECT id,username,first_name,last_name,gpx_wallet_address FROM users WHERE lower(gpx_wallet_address)=lower($1) FOR UPDATE',[String(address||'').trim()]);if(!to.rowCount)throw new HttpError(404,'Recipient GPX wallet was not found.');if(to.rows[0].id===fromId)throw new HttpError(400,'You cannot transfer to your own wallet.');if(!to.rows[0].gpx_wallet_address)throw new HttpError(400,'Recipient wallet is revoked.');const r=await c.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance>=$1 RETURNING balance',[n,fromId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[n,to.rows[0].id]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Sent GPX to @'||COALESCE($3,'user'))`,[fromId,-n,to.rows[0].username]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Received GPX from @'||COALESCE($3,'user'))`,[to.rows[0].id,n, (await c.query('SELECT username FROM users WHERE id=$1',[fromId])).rows[0].username]);return{amount:n,recipient:to.rows[0].username?`@${to.rows[0].username}`:displayName(to.rows[0]),recipientId:to.rows[0].id,balance:r.rows[0].balance};});const senderQ=await pool.query('SELECT first_name,last_name,username FROM users WHERE id=$1',[fromId]); const sender=senderQ.rows[0]||{}; const senderLabel=sender.username?`@${sender.username}`:displayName({id:fromId,...sender}); notifyUser(result.recipientId,`💚 Incoming GPX Transfer\n\n${senderLabel} sent you ${result.amount.toLocaleString()} GPX via Onchain Transfer.`);return result;}
+async function transferGpx(fromId,address,amount){const n=Math.floor(Number(amount));if(!Number.isFinite(n)||n<=0)throw new HttpError(400,'Enter a valid GPX amount.');const result=await tx(async(c)=>{const me=await c.query('SELECT id,balance,gpx_wallet_address FROM users WHERE id=$1 FOR UPDATE',[fromId]);if(!me.rowCount)throw new HttpError(404,'User not found.');const levelRow=await c.query(`SELECT level_override,(SELECT COUNT(*) FROM referrals WHERE referrer_id=$1 AND status='completed') AS referrals FROM users WHERE id=$1`,[fromId]); const level=levelRow.rows[0].level_override==null?Math.floor(Number(levelRow.rows[0].referrals)/100):Number(levelRow.rows[0].level_override);if(level<10)throw new HttpError(403,'You must reach Level 10 to transfer GPX.');const to=await c.query('SELECT id,username,first_name,last_name,gpx_wallet_address FROM users WHERE lower(gpx_wallet_address)=lower($1) FOR UPDATE',[String(address||'').trim()]);if(!to.rowCount)throw new HttpError(404,'Recipient GPX wallet was not found.');if(to.rows[0].id===fromId)throw new HttpError(400,'You cannot transfer to your own wallet.');if(!to.rows[0].gpx_wallet_address)throw new HttpError(400,'Recipient wallet is revoked.');const r=await c.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance>=$1 RETURNING balance',[n,fromId]);if(!r.rowCount)throw new HttpError(400,'Not enough GPX balance.');await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[n,to.rows[0].id]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Sent GPX to @'||COALESCE($3,'user'))`,[fromId,-n,to.rows[0].username]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'transfer','Received GPX from @'||COALESCE($3,'user'))`,[to.rows[0].id,n, (await c.query('SELECT username FROM users WHERE id=$1',[fromId])).rows[0].username]);return{amount:n,recipient:displayName(to.rows[0]),recipientId:to.rows[0].id,balance:r.rows[0].balance};});const senderQ=await pool.query('SELECT first_name,last_name,username FROM users WHERE id=$1',[fromId]); const sender=senderQ.rows[0]||{}; const senderLabel=sender.username?`@${sender.username}`:displayName({id:fromId,...sender}); notifyUser(result.recipientId,`💚 Incoming GPX Transfer\n\n${senderLabel} sent you ${result.amount.toLocaleString()} GPX via Onchain Transfer.`);return result;}
 async function setNotifications(userId,enabled){await pool.query('UPDATE users SET notifications_enabled=$1 WHERE id=$2',[!!enabled,userId]);return !!enabled;}
 async function redeemPromo(userId,code){const result=await tx(async(c)=>{const q=await c.query('SELECT * FROM promo_codes WHERE upper(code)=upper($1) AND active FOR UPDATE',[String(code||'').trim()]);if(!q.rowCount)throw new HttpError(404,'Promo code not found.');const p=q.rows[0];if(p.max_uses>0&&p.uses>=p.max_uses)throw new HttpError(400,'This promo code has reached its usage limit.');const used=await c.query('SELECT 1 FROM promo_redemptions WHERE code=$1 AND user_id=$2',[p.code,userId]);if(used.rowCount)throw new HttpError(409,'You already used this promo code.');await c.query('INSERT INTO promo_redemptions(code,user_id) VALUES($1,$2)',[p.code,userId]);await c.query('UPDATE promo_codes SET uses=uses+1 WHERE code=$1',[p.code]);await c.query('UPDATE users SET balance=balance+$1 WHERE id=$2',[p.reward,userId]);await c.query(`INSERT INTO transactions(user_id,amount,type,title) VALUES($1,$2,'promo',$3)`,[userId,p.reward,'Promo code: '+p.code]);return{reward:Number(p.reward)};});return result;}
 
@@ -574,9 +572,71 @@ async function removeAdmin(userId) {
   return true;
 }
 
+// ---------- Transaction PIN + Telegram biometric security ----------
+function hashPin(pin, saltHex) {
+  return crypto.scryptSync(String(pin), Buffer.from(saltHex, 'hex'), 64).toString('hex');
+}
+function validPin(pin) { return /^\d{4}$/.test(String(pin || '')); }
+function verifyPinValue(pin, hash, salt) {
+  if (!validPin(pin) || !hash || !salt) return false;
+  try {
+    const a = Buffer.from(hash, 'hex');
+    const b = Buffer.from(hashPin(pin, salt), 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (_) { return false; }
+}
+async function hasPin(userId) {
+  const r = await pool.query('SELECT transaction_pin_hash, biometric_token_hash FROM users WHERE id=$1', [userId]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  return { has_pin: !!r.rows[0].transaction_pin_hash, has_biometric: !!r.rows[0].biometric_token_hash };
+}
+async function setTransactionPin(userId, pin, currentPin='') {
+  if (!validPin(pin)) throw new HttpError(400, 'Transaction PIN must be exactly 4 digits.');
+  const r = await pool.query('SELECT transaction_pin_hash,transaction_pin_salt FROM users WHERE id=$1', [userId]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  if (r.rows[0].transaction_pin_hash && !verifyPinValue(currentPin, r.rows[0].transaction_pin_hash, r.rows[0].transaction_pin_salt)) {
+    throw new HttpError(403, 'Current transaction PIN is incorrect.');
+  }
+  const salt = crypto.randomBytes(16).toString('hex');
+  await pool.query('UPDATE users SET transaction_pin_hash=$1,transaction_pin_salt=$2 WHERE id=$3', [hashPin(pin, salt), salt, userId]);
+  return true;
+}
+async function verifyTransactionPin(userId, pin) {
+  const r = await pool.query('SELECT transaction_pin_hash,transaction_pin_salt FROM users WHERE id=$1', [userId]);
+  if (!r.rowCount) throw new HttpError(404, 'User not found.');
+  if (!r.rows[0].transaction_pin_hash) throw new HttpError(400, 'Set your 4-digit transaction PIN first.');
+  if (!verifyPinValue(pin, r.rows[0].transaction_pin_hash, r.rows[0].transaction_pin_salt)) throw new HttpError(403, 'Incorrect transaction PIN.');
+  return true;
+}
+async function registerBiometric(userId, token, pin) {
+  if (!token || String(token).length < 8) throw new HttpError(400, 'Biometric verification token is missing.');
+  await verifyTransactionPin(userId, pin);
+  const hash = crypto.createHash('sha256').update(String(token)).digest('hex');
+  await pool.query('UPDATE users SET biometric_token_hash=$1 WHERE id=$2', [hash, userId]);
+  return true;
+}
+async function verifyBiometric(userId, token) {
+  if (!token) throw new HttpError(403, 'Biometric verification failed.');
+  const r = await pool.query('SELECT biometric_token_hash FROM users WHERE id=$1', [userId]);
+  if (!r.rowCount || !r.rows[0].biometric_token_hash) throw new HttpError(400, 'Biometric verification is not enabled.');
+  const a = Buffer.from(r.rows[0].biometric_token_hash, 'hex');
+  const b = crypto.createHash('sha256').update(String(token)).digest();
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(403, 'Biometric verification failed.');
+  return true;
+}
+async function getRecipientByGpxWallet(address) {
+  const a = String(address || '').trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(a)) throw new HttpError(400, 'Enter a valid GPX wallet address.');
+  const r = await pool.query('SELECT id,first_name,last_name,username,photo_url,gpx_wallet_address FROM users WHERE lower(gpx_wallet_address)=lower($1)', [a]);
+  if (!r.rowCount) throw new HttpError(404, 'No GPX Network account was found for this wallet.');
+  const u = r.rows[0];
+  return { id:u.id, name:displayName(u), first_name:u.first_name, last_name:u.last_name, photo_url:u.photo_url, gpx_wallet_address:u.gpx_wallet_address };
+}
+
 module.exports = {
   money, displayName, notifyUser, notifyAdmins,
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
   createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
-  adjustBalance, setUserLevel, addAdmin, removeAdmin, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo
+  adjustBalance, setUserLevel, addAdmin, removeAdmin, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
+  hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, getRecipientByGpxWallet
 };

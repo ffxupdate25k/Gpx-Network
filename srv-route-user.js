@@ -26,7 +26,7 @@ router.get('/me', wrap(async (req,res)=>{
   const total=await pool.query(`SELECT COALESCE(SUM(amount),0) AS n FROM transactions WHERE user_id=$1 AND amount>0`,[req.user.id]);
   const referrals=Number(ref.rows[0].n); const level=Math.max(0, Number(req.user.level_override ?? Math.floor(referrals/100))); const next=(level+1)*100;
   const wallet=req.user.gpx_wallet_address || await svc.ensureGpxWallet(req.user.id);
-  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawals_per_day:s.withdrawals_per_day});
+  res.json({id:req.user.id,name:svc.displayName(req.user),first_name:req.user.first_name,username:req.user.username,balance:Number(req.user.balance),usdt_balance:Number(req.user.usdt_balance||0),referrals,is_admin:req.isAdmin,created_at:req.user.created_at,referral_link:`https://t.me/${state.bot.username}?start=ref_${req.user.id}`,wallet_address:req.user.wallet_address||null,gpx_wallet_address:wallet,notifications_enabled:req.user.notifications_enabled!==false,level,level_progress:level>=10?100:(referrals%100),next_level_referrals:next,total_earned:Number(total.rows[0].n),tasks_completed:Number(tasks.rows[0].n),auto_payout:!!(s.auto_payout&&s.payout_api_key&&s.payout_token_address),referral_reward:s.referral_reward,min_withdraw:s.min_withdraw,max_withdraw:s.max_withdraw,withdrawal_fee:s.withdrawal_fee,withdrawals_per_day:s.withdrawals_per_day});
 }));
 router.get('/history', wrap(async (req, res) => {
   const { rows } = await pool.query(
@@ -50,7 +50,13 @@ router.post('/promo-codes/redeem',wrap(async(req,res)=>{res.json(await svc.redee
 router.post('/convert',wrap(async(req,res)=>{res.json(await svc.convertGpx(req.user.id,(req.body||{}).amount));}));
 router.post('/gpx-wallet/generate',wrap(async(req,res)=>{res.json({address:await svc.generateGpxWallet(req.user.id)});}));
 router.post('/gpx-wallet/revoke',wrap(async(req,res)=>{res.json({ok:await svc.revokeGpxWallet(req.user.id)});}));
-router.post('/onchain/transfer',wrap(async(req,res)=>{res.json(await svc.transferGpx(req.user.id,(req.body||{}).address,(req.body||{}).amount));}));
+router.get('/onchain/recipient',wrap(async(req,res)=>{res.json(await svc.getRecipientByGpxWallet(req.query.address));}));
+router.post('/security/pin',wrap(async(req,res)=>{res.json({ok:await svc.setTransactionPin(req.user.id,(req.body||{}).pin,(req.body||{}).current_pin||'')});}));
+router.get('/security',wrap(async(req,res)=>{res.json(await svc.hasPin(req.user.id));}));
+router.post('/security/verify-pin',wrap(async(req,res)=>{res.json({ok:await svc.verifyTransactionPin(req.user.id,(req.body||{}).pin)});}));
+router.post('/security/biometric/register',wrap(async(req,res)=>{res.json({ok:await svc.registerBiometric(req.user.id,(req.body||{}).token,(req.body||{}).pin)});}));
+router.post('/security/biometric/verify',wrap(async(req,res)=>{res.json({ok:await svc.verifyBiometric(req.user.id,(req.body||{}).token)});}));
+router.post('/onchain/transfer',wrap(async(req,res)=>{const b=req.body||{};const security=b.security||{};if(security.type==='biometric')await svc.verifyBiometric(req.user.id,security.token);else await svc.verifyTransactionPin(req.user.id,security.pin);res.json(await svc.transferGpx(req.user.id,b.address,b.amount));}));
 router.post('/notifications',wrap(async(req,res)=>{res.json({enabled:await svc.setNotifications(req.user.id,(req.body||{}).enabled)});}));
 
 // Tasks with this user's progress. chat_id is never sent to users. For a timer task the
@@ -149,7 +155,7 @@ router.get('/withdrawals/:id/status', wrap(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) throw new HttpError(404, 'Withdrawal not found.');
   const { rows } = await pool.query(
-    `SELECT id, amount, address, status, payout_state, tx_hash, note, created_at
+    `SELECT id, amount, fee, payout_amount, address, status, payout_state, tx_hash, note, created_at
        FROM withdrawals WHERE id = $1 AND user_id = $2`,
     [id, req.user.id]
   );
@@ -163,6 +169,8 @@ router.get('/withdrawals/:id/status', wrap(async (req, res) => {
     payout_state: w.payout_state,
     tx_hash: w.tx_hash || null,
     note: w.note || null,
+    fee: Number(w.fee || 0),
+    payout_amount: Number(w.payout_amount ?? w.amount),
     created_at: w.created_at
   });
 }));

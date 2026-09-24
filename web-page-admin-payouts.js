@@ -24,7 +24,7 @@ export default {
         ${list.length ? list.map((w) => `
           <div class="card">
             <div class="head" style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-              <b>${money(w.amount)}</b>
+              <b>${money(w.amount)}</b><small style="display:block;color:var(--muted)">Fee ${money(w.fee||0)} · Send ${money(w.payout_amount ?? w.amount)}</small>
               ${stateBadge(w)}
             </div>
             <div class="hint">${esc(w.name)}${w.username ? " · @" + esc(w.username) : ""} · ID ${esc(w.user_id)} · ${esc(fmtDate(w.date))}</div>
