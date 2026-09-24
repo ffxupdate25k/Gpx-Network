@@ -1,0 +1,13 @@
+Watch Ads is now a dedicated page.
+Dashboard -> Watch Ads & Earn -> Watch Ads page.
+
+The page shows:
+- Daily ads completed / daily limit
+- Visual progress ring and progress bar
+- Ads remaining today
+- GPX earned today
+- GPX reward per ad
+- Withdrawal progress for required ads and tasks
+- How the rewarded ad flow works
+
+The Watch button is the only place that starts a rewarded ad.
