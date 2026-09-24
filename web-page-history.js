@@ -18,7 +18,7 @@ export default {
     let active = "withdrawal";
 
     const detail = (x) => {
-      const amount = Math.abs(Number((x.type==="withdrawal"&&(x.final_amount??x.withdrawal_final_amount)) ?? x.amount || 0));
+      const amount = Math.abs(Number(x.amount||0));
       const isWithdrawal = x.type === "withdrawal";
       return `<div class="history-detail card">
         <button class="btn ghost" id="close-detail">‹ Back to History</button>
