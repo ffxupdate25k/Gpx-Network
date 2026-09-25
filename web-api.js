@@ -4,7 +4,7 @@ const authHeader = () => ({ Authorization: "tma " + tg.initData });
 async function http(path, method="GET", body) {
   let res;
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 25000);
-  try { res = await fetch(CONFIG.API_BASE + path, { method, signal: ctl.signal, headers:{"Content-Type":"application/json", ...authHeader()}, body: body!==undefined?JSON.stringify(body):undefined }); }
+  try { res = await fetch(CONFIG.API_BASE + path, { method, cache: "no-store", signal: ctl.signal, headers:{"Content-Type":"application/json", ...authHeader()}, body: body!==undefined?JSON.stringify(body):undefined }); }
   catch(e){ throw new Error(e && e.name === "AbortError" ? "The server took too long to answer. Please try again." : "No connection. Check your internet and try again."); }
   finally { clearTimeout(timer); }
   const data=await res.json().catch(()=>({}));

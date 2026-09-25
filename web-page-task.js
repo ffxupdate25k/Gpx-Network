@@ -1,6 +1,7 @@
 import { api } from "./web-api.js";
 import { tap, haptic, notify, openAny } from "./web-telegram.js";
 import { esc, pageTop, fail } from "./web-utils.js";
+import { emitActivity } from "./web-live.js";
 
 // Tasks are grouped into phases the user works through in this order. The category
 // itself is decided by the server (srv-services.js categorizeTask) from each task's
@@ -125,6 +126,7 @@ export default {
           const r = await api.claimTask(t.id);
           haptic("success");
           notify(`Task complete! You earned ${Number(r.reward).toLocaleString() + " GPX"}.`);
+          emitActivity({ type: "task", reward: r.reward });
           await reload();
           draw();
           advanceIfPhaseCleared();
@@ -151,6 +153,7 @@ export default {
           const r = await api.claimTask(id);
           haptic("success");
           notify(`Task complete! You earned ${Number(r.reward).toLocaleString() + " GPX"}.`);
+          emitActivity({ type: "task", reward: r.reward });
           await reload();
           draw();
           return advanceIfPhaseCleared();

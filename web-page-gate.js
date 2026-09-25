@@ -7,6 +7,9 @@ import { esc } from "./web-utils.js";
 export default {
   render(el, { gate, onPass }) {
     let channels = gate.channels;
+    let disposed = false;
+    let checking = false;
+    let lastCheckAt = 0;
 
     function draw() {
       const joined = channels.filter(c => c.joined).length;
@@ -20,7 +23,7 @@ export default {
             <div class="gate-orb">${icons.lock}</div>
             <span class="gate-kicker">GPX NETWORK</span>
             <h1>Unlock your account</h1>
-            <p>Join the required communities below. Once all are joined, tap verify to continue.</p>
+            <p>Join the required communities below. Once all are joined, this updates automatically — or tap verify to check right away.</p>
             <div class="gate-progress">
               <div class="gate-progress-top">
                 <b>${joined}/${total} joined</b>
@@ -56,7 +59,7 @@ export default {
                 <span>✓</span>
                 <div><b>Everything is ready</b><small>All required channels have been verified.</small></div>
               </div>` : `
-              <div class="gate-tip">Join every channel above, then use the verification button. Your membership is checked live.</div>`}
+              <div class="gate-tip" id="gate-live-note">Join every channel above. We'll check automatically as soon as you come back — no need to tap anything.</div>`}
 
             <button class="btn gate-verify-btn" id="verify" ${total === 0 ? "" : ""}>
               ${allJoined ? "Continue to GPX Network" : "I've joined — Verify"}
@@ -87,6 +90,7 @@ export default {
           const res = await api.getGate();
           if (res.passed) {
             haptic("success");
+            dispose();
             return onPass();
           }
           channels = res.channels;
@@ -101,6 +105,46 @@ export default {
           notify(err.message);
         }
       };
+    }
+
+    // Silent auto-recheck: fires the instant the user comes back to the Mini App
+    // after opening a join link (so tapping Join and joining is enough — no need
+    // to also tap Verify), plus a slow background poll as a safety net for
+    // Telegram clients that don't reliably fire visibility/focus events.
+    async function silentRecheck() {
+      if (disposed || checking) return;
+      const now = Date.now();
+      if (now - lastCheckAt < 1200) return;
+      checking = true; lastCheckAt = now;
+      try {
+        const res = await api.getGate();
+        if (disposed) return;
+        channels = res.channels;
+        draw();
+        if (res.passed) {
+          haptic("success");
+          dispose();
+          setTimeout(onPass, 500);
+        }
+      } catch (e) {
+        // Stay silent — the manual Verify button still works if this keeps failing.
+      } finally {
+        checking = false;
+      }
+    }
+
+    function onVisible() {
+      if (!disposed && document.visibilityState === "visible") silentRecheck();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    const pollId = setInterval(() => { if (!disposed) silentRecheck(); }, 5000);
+
+    function dispose() {
+      disposed = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      clearInterval(pollId);
     }
 
     draw();

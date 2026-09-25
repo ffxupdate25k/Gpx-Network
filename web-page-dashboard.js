@@ -1,4 +1,4 @@
-import {api} from "./web-api.js"; import {getUser,getDisplayName,tap,notify} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; 
+import {api} from "./web-api.js"; import {getUser,getDisplayName,tap,notify} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; import {onActivity} from "./web-live.js";
 
 // Big, bold cards. Each one fills its half of the screen and ends with a full-width action button.
 const tiles=[
@@ -11,6 +11,7 @@ const tiles=[
  {go:"campaign",label:"Create Campaign",sub:"Promote your project",icon:"campaign",btn:"Create Campaign",tone:"green"}
 ];
 export default{async render(el,{go}){
+ const draw=async()=>{
  const me=await api.getMe(),u=getUser(),name=getDisplayName();
  // The Admin Panel card is always on the dashboard for every ID listed in the ADMIN_IDS environment variable.
  const admin=me.is_admin?`<button class="banner admin" data-go="admin"><span class="bic">${icons.settings}</span><span class="btxt"><b>Admin Panel <em>ADMIN</em></b><small>Manage users, tasks, payouts & settings</small></span><span class="bbtn">Open ›</span></button>`:"";
@@ -24,10 +25,16 @@ export default{async render(el,{go}){
   <button class="banner" data-go="onchain"><span class="bic">${icons.transfer}</span><span class="btxt"><b>Onchain Transfer</b><small>Send & receive GPX instantly</small></span><span class="bbtn">Open ›</span></button>
   <button class="banner" data-go="support"><span class="bic">?</span><span class="btxt"><b>Support</b><small>Chat with GPX Support AI</small></span><span class="bbtn">Chat ›</span></button>
   <div class="grid">${tiles.map(b=>`<div class="tile ${b.tone}" data-go="${b.go}" role="button" tabindex="0"><span class="ic">${icons[b.icon]}</span><b>${b.label}</b><small>${b.sub}</small><span class="tbtn">${b.btn}</span></div>`).join("")}</div>
- </div>${bottom("home")}</section>`;bind(el,go);}};
+ </div>${bottom("home")}</section>`;bind(el,go);
+ };
+ await draw();
+ // Balance/level refresh instantly after watching an ad, completing a task, redeeming
+ // a promo code, or converting — no need to leave and come back to Home.
+ onActivity(()=>draw());
+}};
 function bottom(active){const n=(id,label,ic)=>`<button data-go="${id}" class="${active===id?"on":""}">${icons[ic]}<span>${label}</span></button>`;return `<nav class="bottom">${n("home","Home","home")}${n("task","Tasks","task")}${n("invite","Friends","invite")}${n("wallet","Wallet","wallet")}${n("profile","Profile","profile")}</nav>`}
 export function bind(el,go){el.querySelectorAll("[data-go]").forEach(b=>{
- if(b.dataset.go==="campaign"){b.onclick=()=>{tap();notify("Under Configuration. We will notify you once it's ready.");};return;}
+ if(b.dataset.go==="campaign"){b.onclick=()=>{tap();notify("To create a campaign kindly Inbox our support @gpxlivesupport");};return;}
  b.onclick=()=>{tap();go(b.dataset.go);};
 });}
 export {bottom};

@@ -1,5 +1,6 @@
 import { api } from "./web-api.js";
 import { notify, haptic, getUser } from "./web-telegram.js";
+import { emitActivity } from "./web-live.js";
 
 const MONETAG_ZONE_ID = "11878092";
 const MONETAG_SDK_SRC = "https://libtl.com/sdk.js";
@@ -84,6 +85,7 @@ export async function watchAd(button) {
     haptic("success");
     notify(`Ad completed! +${Number(reward.reward).toLocaleString()} GPX`);
     window.dispatchEvent(new CustomEvent("gpx:ad-reward", { detail: reward }));
+    emitActivity({ type: "ad", reward: reward.reward });
     return true;
   } catch (e) {
     notify(e?.message || "The ad could not be completed. Please try again.");

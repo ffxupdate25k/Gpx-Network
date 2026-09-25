@@ -12,5 +12,6 @@ export const icons = {
   back: wrap('<path d="m15 5-7 7 7 7"/>'),
   copy: wrap('<rect x="8" y="8" width="11" height="12" rx="2"/><path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
   settings: wrap('<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 12H2m20 0h-2M12 4V2m0 20v-2m5.7-14.7 1.4-1.4M4.9 19.1l1.4-1.4m0-11.4L4.9 4.9m15.2 14.2-1.4-1.4"/>'),
-  campaign: wrap('<path d="M3 11v2a2 2 0 0 0 2 2h1l1 5h2l-1-5h3l7 4V6l-7 4H6a2 2 0 0 0-2 2Z"/><path d="M14 8v8"/>')
+  campaign: wrap('<path d="M3 11v2a2 2 0 0 0 2 2h1l1 5h2l-1-5h3l7 4V6l-7 4H6a2 2 0 0 0-2 2Z"/><path d="M14 8v8"/>'),
+  lock: wrap('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/>')
 };

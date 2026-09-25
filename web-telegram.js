@@ -41,7 +41,16 @@ export function openLink(url) {
   try { tg.openLink(url); } catch (e) { window.open(url, "_blank"); }
 }
 export function openTelegramLink(url) {
-  try { tg.openTelegramLink(url); } catch (e) { window.open(url, "_blank"); }
+  // tg.openTelegramLink() is the right call for t.me links, but on some Telegram
+  // clients it silently does nothing instead of throwing. If we're still sitting
+  // here a moment later (nothing took us away or backgrounded the app), fall back
+  // to the more broadly-supported openLink, and finally to a plain window.open.
+  let threw = false;
+  try { tg.openTelegramLink(url); } catch (e) { threw = true; }
+  if (threw) { openLink(url); return; }
+  setTimeout(() => {
+    if (document.visibilityState === "visible") openLink(url);
+  }, 700);
 }
 // Opens t.me links inside Telegram, everything else in the browser.
 export function openAny(url) {
