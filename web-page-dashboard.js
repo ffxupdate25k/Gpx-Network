@@ -1,4 +1,4 @@
-import {api} from "./web-api.js"; import {getUser,getDisplayName,tap} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; 
+import {api} from "./web-api.js"; import {getUser,getDisplayName,tap,notify} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; 
 
 // Big, bold cards. Each one fills its half of the screen and ends with a full-width action button.
 const tiles=[
@@ -7,7 +7,8 @@ const tiles=[
  {go:"task",label:"Tasks",sub:"Complete & earn",icon:"task",btn:"View Tasks",tone:"green"},
  {go:"promo",label:"Promo Code",sub:"Redeem rewards",icon:"promo",btn:"Redeem",tone:"teal"},
  {go:"leaderboard",label:"Leaderboard",sub:"Top earners",icon:"leaderboard",btn:"View Ranking",tone:"green"},
- {go:"wallet",label:"Wallet",sub:"Manage your funds",icon:"wallet",btn:"Open Wallet",tone:"teal"}
+ {go:"wallet",label:"Wallet",sub:"Manage your funds",icon:"wallet",btn:"Open Wallet",tone:"teal"},
+ {go:"campaign",label:"Create Campaign",sub:"Promote your project",icon:"campaign",btn:"Create Campaign",tone:"green"}
 ];
 export default{async render(el,{go}){
  const me=await api.getMe(),u=getUser(),name=getDisplayName();
@@ -25,5 +26,8 @@ export default{async render(el,{go}){
   <div class="grid">${tiles.map(b=>`<div class="tile ${b.tone}" data-go="${b.go}" role="button" tabindex="0"><span class="ic">${icons[b.icon]}</span><b>${b.label}</b><small>${b.sub}</small><span class="tbtn">${b.btn}</span></div>`).join("")}</div>
  </div>${bottom("home")}</section>`;bind(el,go);}};
 function bottom(active){const n=(id,label,ic)=>`<button data-go="${id}" class="${active===id?"on":""}">${icons[ic]}<span>${label}</span></button>`;return `<nav class="bottom">${n("home","Home","home")}${n("task","Tasks","task")}${n("invite","Friends","invite")}${n("wallet","Wallet","wallet")}${n("profile","Profile","profile")}</nav>`}
-export function bind(el,go){el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tap();go(b.dataset.go);});}
+export function bind(el,go){el.querySelectorAll("[data-go]").forEach(b=>{
+ if(b.dataset.go==="campaign"){b.onclick=()=>{tap();notify("Under Configuration. We will notify you once it's ready.");};return;}
+ b.onclick=()=>{tap();go(b.dataset.go);};
+});}
 export {bottom};

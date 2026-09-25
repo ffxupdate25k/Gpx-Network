@@ -844,6 +844,28 @@ async function verifyBiometric(userId, token) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(403, 'Biometric verification failed.');
   return true;
 }
+async function revokeBiometric(userId) {
+  await pool.query('UPDATE users SET biometric_token_hash=NULL WHERE id=$1', [userId]);
+  return true;
+}
+// ---------- Task categorization ----------
+// A task always falls into exactly one phase, decided automatically from how it's
+// verified and, for a link-based task, from the link itself — admins never pick this:
+//  - 'telegram'      auto-verified channel/group tasks, and timer tasks whose link
+//                     opens a Telegram channel, group or invite link
+//  - 'telegram_bot'  timer tasks whose link opens a Telegram bot (username ends in "bot")
+//  - 'external'      anything else (a regular https:// link)
+function categorizeTask(t) {
+  if ((t.verify_type || 'timer') === 'auto') return 'telegram';
+  const url = String(t.url || '').trim();
+  const m = url.match(/^https?:\/\/(?:www\.)?(?:t|telegram)\.me\/([^/?#]+)/i);
+  if (!m) return 'external';
+  const seg = m[1];
+  if (/^(joinchat|\+)/i.test(seg)) return 'telegram';
+  if (/bot$/i.test(seg)) return 'telegram_bot';
+  return 'telegram';
+}
+
 async function getRecipientByGpxWallet(address) {
   const a = String(address || '').trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(a)) throw new HttpError(400, 'Enter a valid GPX wallet address.');
@@ -858,5 +880,5 @@ module.exports = {
   registerUser, completeReferral, checkGate, clearGateCache, completeAutoTask, startTimerTask, completeTimerTask,
   createWithdrawal, processWithdrawal, approveWithdrawal, sendPayoutNow, recoverPayouts, classifyPayout, shortAddr,
   adjustBalance, setUserLevel, addAdmin, removeAdmin, setUserBanned, runBroadcast, ensureGpxWallet, generateGpxWallet, revokeGpxWallet, convertGpx, transferGpx, setNotifications, redeemPromo,
-  hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, getRecipientByGpxWallet
+  hasPin, setTransactionPin, verifyTransactionPin, registerBiometric, verifyBiometric, revokeBiometric, getRecipientByGpxWallet, categorizeTask
 };

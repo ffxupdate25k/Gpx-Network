@@ -234,6 +234,24 @@ CREATE INDEX IF NOT EXISTS tasks_sort_order_idx ON tasks(sort_order, id);
 UPDATE tasks SET verify_type = 'timer' WHERE verify_type = 'screenshot';
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_verify_type_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_verify_type_check CHECK (verify_type IN ('auto','timer'));
+
+-- Tasks are grouped into phases the user works through in order: Telegram, then
+-- Telegram Bot, then External Link. The category is derived automatically from the
+-- task's link (see categorizeTask in srv-services.js) whenever an admin saves a task,
+-- so this column is never set by hand. The one-time backfill below approximates the
+-- same rule for rows that existed before this column did.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'external';
+UPDATE tasks SET category = CASE
+  WHEN verify_type = 'auto' THEN 'telegram'
+  WHEN url ~* '^https?://(www\\.)?(t|telegram)\\.me/(joinchat/|\\+)' THEN 'telegram'
+  WHEN url ~* '^https?://(www\\.)?(t|telegram)\\.me/[A-Za-z0-9_]*bot(/|\\?|$)' THEN 'telegram_bot'
+  WHEN url ~* '^https?://(www\\.)?(t|telegram)\\.me/' THEN 'telegram'
+  ELSE 'external'
+END
+WHERE category IS NULL OR category = '';
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_category_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_category_check CHECK (category IN ('telegram','telegram_bot','external'));
+CREATE INDEX IF NOT EXISTS tasks_category_idx ON tasks(category, sort_order, id);
 `;
 
 // Starting values only. Everything here is editable in the Admin panel afterwards.

@@ -37,7 +37,8 @@ router.get('/history', wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT t.title, t.amount, t.status, t.type, t.created_at AS date,
             w.id AS withdrawal_id, w.address AS withdrawal_address, w.tx_hash AS withdrawal_tx_hash,
-            w.payout_state AS withdrawal_payout_state, w.note AS withdrawal_note
+            w.payout_state AS withdrawal_payout_state, w.note AS withdrawal_note,
+            w.amount AS withdrawal_requested_amount, w.fee AS withdrawal_fee, w.payout_amount AS withdrawal_payout_amount
        FROM transactions t
        LEFT JOIN withdrawals w ON w.transaction_id = t.id
       WHERE t.user_id = $1
@@ -61,6 +62,7 @@ router.get('/security',wrap(async(req,res)=>{res.json(await svc.hasPin(req.user.
 router.post('/security/verify-pin',wrap(async(req,res)=>{res.json({ok:await svc.verifyTransactionPin(req.user.id,(req.body||{}).pin)});}));
 router.post('/security/biometric/register',wrap(async(req,res)=>{res.json({ok:await svc.registerBiometric(req.user.id,(req.body||{}).token,(req.body||{}).pin)});}));
 router.post('/security/biometric/verify',wrap(async(req,res)=>{res.json({ok:await svc.verifyBiometric(req.user.id,(req.body||{}).token)});}));
+router.post('/security/biometric/revoke',wrap(async(req,res)=>{res.json({ok:await svc.revokeBiometric(req.user.id)});}));
 router.post('/onchain/transfer',wrap(async(req,res)=>{const b=req.body||{};const security=b.security||{};if(security.type==='biometric')await svc.verifyBiometric(req.user.id,security.token);else await svc.verifyTransactionPin(req.user.id,security.pin);res.json(await svc.transferGpx(req.user.id,b.address,b.amount));}));
 router.post('/support',wrap(async(req,res)=>{
   const q=String((req.body||{}).message||'').trim().slice(0,500);
@@ -82,7 +84,7 @@ router.post('/notifications',wrap(async(req,res)=>{res.json({enabled:await svc.s
 // user is currently waiting on, remaining_seconds tells the client how much longer to count.
 router.get('/tasks', wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT t.id, t.title, t.description, t.reward, t.url, t.verify_type, t.timer_seconds, t.max_completions,
+    `SELECT t.id, t.title, t.description, t.reward, t.url, t.verify_type, t.timer_seconds, t.max_completions, t.category,
             COALESCE(s.status, 'todo') AS raw_status,
             GREATEST(0, t.timer_seconds - EXTRACT(EPOCH FROM (now() - s.created_at)))::int AS remaining_seconds
        FROM tasks t
@@ -97,6 +99,7 @@ router.get('/tasks', wrap(async (req, res) => {
   res.json(rows.map((r) => ({
     id: r.id, title: r.title, description: r.description, reward: r.reward, url: r.url,
     verify_type: r.verify_type, timer_seconds: r.timer_seconds, max_completions: Number(r.max_completions || 0),
+    category: r.category || 'external',
     status: r.raw_status === 'approved' ? 'done' : r.raw_status === 'pending' ? 'pending' : 'todo',
     remaining_seconds: r.raw_status === 'pending' ? r.remaining_seconds : null
   })));
@@ -193,7 +196,11 @@ router.get('/withdrawals/:id/status', wrap(async (req, res) => {
 }));
 
 router.post('/withdrawals', wrap(async (req, res) => {
-  const result = await svc.createWithdrawal(req.user, (req.body || {}).amount);
+  const b = req.body || {};
+  const security = b.security || {};
+  if (security.type === 'biometric') await svc.verifyBiometric(req.user.id, security.token);
+  else await svc.verifyTransactionPin(req.user.id, security.pin);
+  const result = await svc.createWithdrawal(req.user, b.amount);
   res.json({ ok: true, id: result.id, balance: result.balance, auto: result.auto });
 }));
 

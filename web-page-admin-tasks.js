@@ -1,8 +1,12 @@
 // Admin task manager. Tasks are reordered with explicit Move Up / Move Down buttons.
 // Each move is saved immediately so the order users see is the order shown here.
+// Category (Telegram / Telegram Bot / External Link) is never chosen by the admin —
+// the server derives it automatically from the link, so it's shown here read-only.
 import { api } from "./web-api.js";
 import { confirmBox, haptic } from "./web-telegram.js";
 import { esc, fail } from "./web-utils.js";
+
+const CATEGORY_LABEL = { telegram: "📡 Telegram", telegram_bot: "🤖 Telegram Bot", external: "🔗 External Link" };
 
 export default {
   async render(el) {
@@ -14,6 +18,7 @@ export default {
         <button class="btn" id="new">New task</button>
         <p class="hint task-order-hint">
           Use <b>Move Up</b> or <b>Move Down</b>. Each tap saves the new order immediately.
+          A task's phase (Telegram / Telegram Bot / External Link) is set automatically from its link.
         </p>
         <div id="task-order-list">
         ${list.length ? list.map((t, i) => {
@@ -29,7 +34,8 @@ export default {
                 <span class="reward" style="color:var(--ok);font-weight:800">+${Number(t.reward).toLocaleString()} GPX</span>
               </div>
               <div class="hint">
-                ${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"}
+                <span class="badge b-pend">${esc(CATEGORY_LABEL[t.category] || CATEGORY_LABEL.external)}</span>
+                · ${t.verify_type === "auto" ? "🤖 Auto-verify · " + esc(t.chat_id) : "⏱ " + t.timer_seconds + "s countdown"}
                 · ${limitText}
               </div>
               <div class="acts">
@@ -120,6 +126,8 @@ export default {
             <option value="auto">Auto: bot checks channel/group membership</option>
           </select>
 
+          <div class="row" style="margin-top:8px"><span>Phase (set automatically from the link)</span><b id="f-category-preview">-</b></div>
+
           <div id="auto-box">
             <label for="f-chat">Channel or group to check</label>
             <input id="f-chat" placeholder="@yourchannel" value="${esc(v.chat_id)}">
@@ -144,14 +152,31 @@ export default {
       const type = el.querySelector("#f-type");
       const autoBox = el.querySelector("#auto-box");
       const timerBox = el.querySelector("#timer-box");
+      const catPreview = el.querySelector("#f-category-preview");
       type.value = v.verify_type;
+
+      // Mirrors svc.categorizeTask (srv-services.js) purely for a live preview —
+      // the server always recomputes the real category on save.
+      const previewCategory = () => {
+        if (type.value === "auto") return "📡 Telegram";
+        const url = (el.querySelector("#f-url")?.value || "").trim();
+        const m = url.match(/^https?:\/\/(?:www\.)?(?:t|telegram)\.me\/([^/?#]+)/i);
+        if (!m) return url ? "🔗 External Link" : "-";
+        const seg = m[1];
+        if (/^(joinchat|\+)/i.test(seg)) return "📡 Telegram";
+        if (/bot$/i.test(seg)) return "🤖 Telegram Bot";
+        return "📡 Telegram";
+      };
+      const updateCategoryPreview = () => { catPreview.textContent = previewCategory(); };
 
       const sync = () => {
         autoBox.hidden = type.value !== "auto";
         timerBox.hidden = type.value !== "timer";
+        updateCategoryPreview();
       };
       type.onchange = sync;
       sync();
+      el.querySelector("#f-url")?.addEventListener("input", updateCategoryPreview);
 
       el.querySelector("#cancel").onclick = showList;
 

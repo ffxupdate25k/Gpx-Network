@@ -100,7 +100,10 @@ async function validateTask(b) {
   return {
     title, description, reward, url, verify_type, chat_id, timer_seconds, active,
     sort_order: Number.isFinite(Number(b.sort_order)) ? Math.max(0, Math.floor(Number(b.sort_order))) : 0,
-    max_completions
+    max_completions,
+    // Always computed from the link/verify type — never taken from the request body,
+    // so admins can't set it directly and it can't drift out of sync with the link.
+    category: svc.categorizeTask({ verify_type, url })
   };
 }
 
@@ -117,11 +120,11 @@ router.get('/tasks', wrap(async (req, res) => {
 router.post('/tasks', wrap(async (req, res) => {
   const t = await validateTask(req.body || {});
   const { rows } = await pool.query(
-    `INSERT INTO tasks (title, description, reward, url, verify_type, chat_id, timer_seconds, active, sort_order, max_completions)
+    `INSERT INTO tasks (title, description, reward, url, verify_type, chat_id, timer_seconds, active, sort_order, max_completions, category)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-       COALESCE((SELECT MAX(sort_order) + 1 FROM tasks), 1), $9)
+       COALESCE((SELECT MAX(sort_order) + 1 FROM tasks), 1), $9, $10)
      RETURNING id`,
-    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.max_completions]
+    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.max_completions, t.category]
   );
   res.json({ id: rows[0].id });
 }));
@@ -133,9 +136,9 @@ router.put('/tasks/:id', wrap(async (req, res) => {
   const r = await pool.query(
     `UPDATE tasks
         SET title=$1, description=$2, reward=$3, url=$4, verify_type=$5, chat_id=$6,
-            timer_seconds=$7, active=$8, sort_order=$9, max_completions=$10
-      WHERE id=$11`,
-    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.sort_order, t.max_completions, id]
+            timer_seconds=$7, active=$8, sort_order=$9, max_completions=$10, category=$11
+      WHERE id=$12`,
+    [t.title, t.description, t.reward, t.url, t.verify_type, t.chat_id, t.timer_seconds, t.active, t.sort_order, t.max_completions, t.category, id]
   );
   if (!r.rowCount) throw new HttpError(404, 'Task not found.');
   res.json({ ok: true });

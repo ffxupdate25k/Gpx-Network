@@ -22,7 +22,7 @@ export const api={
  generateGpxWallet:()=>post("/api/gpx-wallet/generate"), revokeGpxWallet:()=>post("/api/gpx-wallet/revoke"),
  transferRecipient:(address)=>http(`/api/onchain/recipient?address=${encodeURIComponent(address)}`),
  getSecurity:()=>http('/api/security'), setPin:(pin,current_pin)=>post('/api/security/pin',{pin,current_pin}), verifyPin:(pin)=>post('/api/security/verify-pin',{pin}),
- registerBiometric:(token,pin)=>post('/api/security/biometric/register',{token,pin}), verifyBiometric:(token)=>post('/api/security/biometric/verify',{token}),
+ registerBiometric:(token,pin)=>post('/api/security/biometric/register',{token,pin}), verifyBiometric:(token)=>post('/api/security/biometric/verify',{token}), revokeBiometric:()=>post('/api/security/biometric/revoke'),
  transferGpx:(address,amount,security)=>post("/api/onchain/transfer",{address,amount,security}),
  ads:{status:()=>http("/api/ads/status"),start:()=>post("/api/ads/start"),reward:(nonce)=>post("/api/ads/reward",{nonce})},
  setNotifications:(enabled)=>post("/api/notifications",{enabled}),

@@ -17,18 +17,28 @@ export default {
     let all = [];
     let active = "withdrawal";
 
+    // For withdrawals, always show the final amount actually sent to the user
+    // (payout_amount, i.e. the requested amount minus the withdrawal fee) —
+    // never the amount originally applied for.
+    const displayAmount = (x) => {
+      if (x.type === "withdrawal" && x.withdrawal_payout_amount != null) return Number(x.withdrawal_payout_amount);
+      return Math.abs(Number(x.amount||0));
+    };
+
     const detail = (x) => {
-      const amount = Math.abs(Number(x.amount||0));
+      const amount = displayAmount(x);
       const isWithdrawal = x.type === "withdrawal";
       return `<div class="history-detail card">
         <button class="btn ghost" id="close-detail">‹ Back to History</button>
         <div class="detail-icon">${icon(x.type)}</div>
         <h2>${esc(label(x.type))}</h2>
-        <div class="row"><span>Amount</span><b>${amount.toFixed(isWithdrawal?2:0)} ${isWithdrawal?"USDT":"GPX"}</b></div>
+        <div class="row"><span>Amount Sent</span><b>${amount.toFixed(isWithdrawal?2:0)} ${isWithdrawal?"USDT":"GPX"}</b></div>
         <div class="row"><span>Status</span><b>${esc(String(x.status||"completed"))}</b></div>
         <div class="row"><span>Date</span><b>${new Date(x.date).toLocaleString()}</b></div>
         ${isWithdrawal ? `
           <div class="row"><span>Withdrawal ID</span><b>#${x.withdrawal_id}</b></div>
+          ${x.withdrawal_requested_amount!=null?`<div class="row"><span>Amount Requested</span><b>${Number(x.withdrawal_requested_amount).toFixed(2)} USDT</b></div>`:""}
+          ${x.withdrawal_fee!=null&&Number(x.withdrawal_fee)>0?`<div class="row"><span>Fee</span><b>${Number(x.withdrawal_fee).toFixed(2)} USDT</b></div>`:""}
           <div class="row"><span>Network</span><b>BEP20 (BNB Smart Chain)</b></div>
           <div class="row"><span>Payout Address</span><b class="wrap">${esc(x.withdrawal_address||"-")}</b></div>
           <div class="row"><span>Processing</span><b>${esc(x.withdrawal_payout_state||x.status||"pending")}</b></div>
@@ -46,7 +56,7 @@ export default {
         <div class="body"><div class="card">
           ${rows.length ? rows.map((x,i)=>`<button class="history-row" data-index="${all.indexOf(x)}">
             <span class="txicon">${icon(x.type)}</span><span class="history-main"><b>${esc(x.title||label(x.type))}</b><small>${new Date(x.date).toLocaleString()} · ${esc(String(x.status||"completed"))}</small></span>
-            <strong class="${Number(x.amount)>=0?"plus":"minus"}">${Number(x.amount)>=0?"+":"−"}${Math.abs(Number(x.amount)).toLocaleString(undefined,{maximumFractionDigits:2})} ${x.type==="withdrawal"?"USDT":"GPX"}</strong><span class="chev">›</span>
+            <strong class="${Number(x.amount)>=0?"plus":"minus"}">${Number(x.amount)>=0?"+":"−"}${displayAmount(x).toLocaleString(undefined,{maximumFractionDigits:2})} ${x.type==="withdrawal"?"USDT":"GPX"}</strong><span class="chev">›</span>
           </button>`).join("") : `<div class="empty">No ${active==="ad"?"ad":active} history yet.</div>`}
         </div></div>${bottom("wallet")}</section>`;
 
