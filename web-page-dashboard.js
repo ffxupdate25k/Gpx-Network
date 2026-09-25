@@ -1,4 +1,4 @@
-import {api} from "./web-api.js"; import {getUser,getDisplayName,tap,notify} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; import {onActivity} from "./web-live.js";
+import {api} from "./web-api.js"; import {getUser,getDisplayName,tap} from "./web-telegram.js"; import {icons} from "./web-icons.js"; import {esc,avatarHTML} from "./web-utils.js"; import {onActivity} from "./web-live.js";
 
 // Big, bold cards. Each one fills its half of the screen and ends with a full-width action button.
 const tiles=[
@@ -34,7 +34,6 @@ export default{async render(el,{go}){
 }};
 function bottom(active){const n=(id,label,ic)=>`<button data-go="${id}" class="${active===id?"on":""}">${icons[ic]}<span>${label}</span></button>`;return `<nav class="bottom">${n("home","Home","home")}${n("task","Tasks","task")}${n("invite","Friends","invite")}${n("wallet","Wallet","wallet")}${n("profile","Profile","profile")}</nav>`}
 export function bind(el,go){el.querySelectorAll("[data-go]").forEach(b=>{
- if(b.dataset.go==="campaign"){b.onclick=()=>{tap();notify("To create a campaign kindly Inbox our support @gpxlivesupport");};return;}
  b.onclick=()=>{tap();go(b.dataset.go);};
 });}
 export {bottom};

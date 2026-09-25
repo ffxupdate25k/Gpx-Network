@@ -281,7 +281,8 @@ const DEFAULTS = {
   payout_api_key: '',
   payout_token_address: '',
   payout_channel_enabled: 'false',
-  payout_channel: ''
+  payout_channel: '',
+  support_telegram_link: 'https://t.me/gpxlivesupport'
 };
 
 async function init() {
@@ -306,7 +307,8 @@ async function getSettings(q = pool) {
     withdrawal_cooldown_hours:Number(raw.withdrawal_cooldown_hours), monetag_zone_id:'11878092', monetag_sdk_src:'https://libtl.com/sdk.js', welcome_text:raw.welcome_text,
     welcome_photo_url:raw.welcome_photo_url, welcome_emoji_ids:raw.welcome_emoji_ids||'', auto_payout:raw.auto_payout==='true',
     payout_api_url:raw.payout_api_url, payout_api_key:raw.payout_api_key, payout_token_address:raw.payout_token_address,
-    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||''
+    payout_channel_enabled:raw.payout_channel_enabled==='true', payout_channel:raw.payout_channel||'',
+    support_telegram_link:raw.support_telegram_link||DEFAULTS.support_telegram_link
   };
 }
 

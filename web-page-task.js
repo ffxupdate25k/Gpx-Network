@@ -42,7 +42,7 @@ function rowHTML(t) {
 }
 
 export default {
-  async render(el) {
+  async render(el, { go }) {
     let tasks = await api.getTasks();
     let active = null; // decided once tasks are in, by pickPhase()
 
@@ -86,9 +86,28 @@ export default {
       });
     };
 
+    // Once every task the user has is done, the list itself has nothing left to show —
+    // swap it for a completion message and a nudge to create their own campaign instead
+    // of leaving a page full of "Done" rows.
+    const allDone = () => tasks.length > 0 && tasks.every((t) => t.status === "done");
+
     const draw = () => {
+      if (allDone()) {
+        tabsBox.innerHTML = "";
+        list.innerHTML = `
+          <div class="empty alldone">
+            <div class="alldone-ic">🎉</div>
+            <b>You've completed all tasks!</b>
+            <p>Nice work — you're all caught up for now. Want to keep earning? Create your own campaign and let other users complete tasks for you.</p>
+            <button class="btn" id="own-campaign-btn">🚀 Create Campaign</button>
+          </div>`;
+        const ownBtn = list.querySelector("#own-campaign-btn");
+        if (ownBtn) ownBtn.onclick = () => { tap(); go("campaign"); };
+        return;
+      }
       drawTabs();
-      const rows = byPhase(active);
+      // Completed tasks disappear from the list entirely instead of sitting there as "Done".
+      const rows = byPhase(active).filter((t) => t.status !== "done");
       list.innerHTML = rows.length ? rows.map(rowHTML).join("") : `<div class="empty">No ${esc(phaseLabel(active))} tasks right now.<br>Check back soon.</div>`;
       rows.filter((t) => t.status === "pending" && t.verify_type === "timer").forEach(startCountdown);
     };

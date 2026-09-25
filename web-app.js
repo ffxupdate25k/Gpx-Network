@@ -12,11 +12,12 @@ import task from "./web-page-task.js";
 import leaderboard from "./web-page-leaderboard.js";
 import promo from "./web-page-promo.js";
 import support from "./web-page-support.js";
+import campaign from "./web-page-campaign.js";
 import watchads from "./web-page-watchads.js";
 import withdrawal from "./web-page-withdrawal.js";
 import history from "./web-page-history.js";
 import admin from "./web-page-admin.js"; import {startInAppInterstitial} from "./web-ads.js";
-const routes={home:dashboard,profile,invite,convert,onchain,wallet,task,leaderboard,promo,withdrawal,history,support,watchads,admin};
+const routes={home:dashboard,profile,invite,convert,onchain,wallet,task,leaderboard,promo,withdrawal,history,support,watchads,admin,campaign};
 if(!isTelegram()){document.getElementById("blocked").hidden=false;document.getElementById("boot-loader")?.remove();document.getElementById("route-loader")?.remove();} else boot();
 async function boot(){
  initTelegram(); const app=document.getElementById("app"); app.hidden=false;

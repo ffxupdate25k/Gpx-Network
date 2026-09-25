@@ -64,6 +64,12 @@ export default{async render(el){
   </div>
 
   <div class="card">
+    <b>Campaign / Support</b>
+    <p class="hint">Shown on the user-facing "Create Campaign" page and used as the "Contact Support" link. Users are warned there not to DM this contact for anything other than campaign creation.</p>
+    <label>Support Telegram link (https://t.me/...)</label><input id="supportlink" value="${esc(s.support_telegram_link||"")}" placeholder="https://t.me/gpxlivesupport">
+  </div>
+
+  <div class="card">
     <b>Bot welcome</b>
     <textarea id="welcome">${esc(s.welcome_text)}</textarea>
     <label>Welcome photo URL</label><input id="photo" value="${esc(s.welcome_photo_url||"")}">
@@ -103,7 +109,8 @@ export default{async render(el){
         payout_channel:el.querySelector("#pchannel").value,
         welcome_text:el.querySelector("#welcome").value,
         welcome_photo_url:el.querySelector("#photo").value,
-        welcome_emoji_ids:el.querySelector("#emojis").value
+        welcome_emoji_ids:el.querySelector("#emojis").value,
+        support_telegram_link:el.querySelector("#supportlink").value
       });
       el.querySelector("#key").value="";
       notify("Settings saved.");

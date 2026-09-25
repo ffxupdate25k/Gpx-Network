@@ -48,9 +48,12 @@ export function openTelegramLink(url) {
   let threw = false;
   try { tg.openTelegramLink(url); } catch (e) { threw = true; }
   if (threw) { openLink(url); return; }
+  // Some Telegram clients accept the call without throwing but never actually
+  // navigate. Check quickly (not the old 700ms) so the link still opens right
+  // away on those clients instead of feeling like a delayed tap.
   setTimeout(() => {
     if (document.visibilityState === "visible") openLink(url);
-  }, 700);
+  }, 200);
 }
 // Opens t.me links inside Telegram, everything else in the browser.
 export function openAny(url) {
